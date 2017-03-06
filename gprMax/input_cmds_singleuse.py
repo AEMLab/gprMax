@@ -26,7 +26,7 @@ import numpy as np
 
 from gprMax.constants import c, floattype
 from gprMax.exceptions import CmdInputError, GeneralError
-from gprMax.utilities import round_value, human_size, get_host_info
+from gprMax.utilities import get_host_info, human_size, memory_usage, round_value
 from gprMax.waveforms import Waveform
 
 
@@ -65,9 +65,18 @@ def process_singlecmds(singlecmds, G):
     # Number of threads (OpenMP) to use
     cmd = '#num_threads'
     if sys.platform == 'darwin':
-        os.environ['OMP_WAIT_POLICY'] = 'ACTIVE'  # What to do with threads when they are waiting; can drastically effect performance
-    os.environ['OMP_DYNAMIC'] = 'FALSE'
+        os.environ['OMP_WAIT_POLICY'] = 'ACTIVE'  # Should waiting threads consume CPU power (can drastically effect performance)
+    os.environ['OMP_DYNAMIC'] = 'FALSE' # Number of threads may be adjusted by the run time environment to best utilize system resources
+    os.environ['OMP_PLACES'] = 'cores' # Each place corresponds to a single core (having one or more hardware threads)
+    #os.environ['OMP_PLACES'] = '{0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30}'
     os.environ['OMP_PROC_BIND'] = 'TRUE'  # Bind threads to physical cores
+    # os.environ['OMP_DISPLAY_ENV'] = 'TRUE' # Prints OMP version and environment variables (useful for debug)
+
+    # Catch bug with Windows Subsystem for Linux (https://github.com/Microsoft/BashOnWindows/issues/785)
+    if 'Microsoft' in hostinfo['osversion']:
+        os.environ['KMP_AFFINITY'] = 'disabled'
+        del os.environ['OMP_PLACES']
+        del os.environ['OMP_PROC_BIND']
 
     if singlecmds[cmd] != 'None':
         tmp = tuple(int(x) for x in singlecmds[cmd].split())
@@ -81,13 +90,13 @@ def process_singlecmds(singlecmds, G):
         G.nthreads = int(os.environ.get('OMP_NUM_THREADS'))
     else:
         # Set number of threads to number of physical CPU cores
-        G.nthreads = hostinfo['cpucores']
+        G.nthreads = hostinfo['physicalcores']
         os.environ['OMP_NUM_THREADS'] = str(G.nthreads)
 
     if G.messages:
-        print('Number of (OpenMP) threads: {}'.format(G.nthreads))
-    if G.nthreads > hostinfo['cpucores']:
-        print(Fore.RED + 'WARNING: You have specified more threads ({}) than available physical CPU cores ({}). This may lead to degraded performance.'.format(G.nthreads, hostinfo['cpucores']) + Style.RESET_ALL)
+        print('Number of CPU (OpenMP) threads: {}'.format(G.nthreads))
+    if G.nthreads > hostinfo['physicalcores']:
+        print(Fore.RED + 'WARNING: You have specified more threads ({}) than available physical CPU cores ({}). This may lead to degraded performance.'.format(G.nthreads, hostinfo['physicalcores']) + Style.RESET_ALL)
 
     # Spatial discretisation
     cmd = '#dx_dy_dz'
@@ -120,10 +129,7 @@ def process_singlecmds(singlecmds, G):
         print('Domain size: {:g} x {:g} x {:g}m ({:d} x {:d} x {:d} = {:g} cells)'.format(tmp[0], tmp[1], tmp[2], G.nx, G.ny, G.nz, (G.nx * G.ny * G.nz)))
 
     # Estimate memory (RAM) usage
-    stdoverhead = 70e6
-    floatarrays = (6 + 6 + 1) * (G.nx + 1) * (G.ny + 1) * (G.nz + 1) * np.dtype(floattype).itemsize  # 6 x field arrays + 6 x ID arrays + 1 x solid array
-    rigidarray = (12 + 6) * (G.nx + 1) * (G.ny + 1) * (G.nz + 1) * np.dtype(np.int8).itemsize
-    memestimate = stdoverhead + floatarrays + rigidarray
+    memestimate = memory_usage(G)
     if memestimate > hostinfo['ram']:
         print(Fore.RED + 'WARNING: Estimated memory (RAM) required ~{} exceeds {} detected!\n'.format(human_size(memestimate), human_size(hostinfo['ram'], a_kilobyte_is_1024_bytes=True)) + Style.RESET_ALL)
     if G.messages:

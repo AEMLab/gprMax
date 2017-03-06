@@ -132,6 +132,8 @@ def process_multicmds(multicmds, G):
                 v.stop = G.timewindow
                 startstop = ' '
 
+            v.calculate_waveform_values(G)
+
             if G.messages:
                 print('Voltage source with polarity {} at {:g}m, {:g}m, {:g}m, resistance {:.1f} Ohms,'.format(v.polarisation, v.xcoord * G.dx, v.ycoord * G.dy, v.zcoord * G.dz, v.resistance) + startstop + 'using waveform {} created.'.format(v.waveformID))
 
@@ -164,7 +166,7 @@ def process_multicmds(multicmds, G):
             h = HertzianDipole()
             h.polarisation = polarisation
 
-            # Set length of dipole to grid size in polaristion direction
+            # Set length of dipole to grid size in polarisation direction
             if h.polarisation == 'x':
                 h.dl = G.dx
             elif h.polarisation == 'y':
@@ -201,6 +203,8 @@ def process_multicmds(multicmds, G):
                 h.start = 0
                 h.stop = G.timewindow
                 startstop = ' '
+
+            h.calculate_waveform_values(G)
 
             if G.messages:
                 if G.dimension == '2D':
@@ -266,6 +270,8 @@ def process_multicmds(multicmds, G):
                 m.stop = G.timewindow
                 startstop = ' '
 
+            m.calculate_waveform_values(G)
+
             if G.messages:
                 print('Magnetic dipole with polarity {} at {:g}m, {:g}m, {:g}m,'.format(m.polarisation, m.xcoord * G.dx, m.ycoord * G.dy, m.zcoord * G.dz) + startstop + 'using waveform {} created.'.format(m.waveformID))
 
@@ -307,7 +313,6 @@ def process_multicmds(multicmds, G):
             t.ID = t.__class__.__name__ + '(' + str(t.xcoord) + ',' + str(t.ycoord) + ',' + str(t.zcoord) + ')'
             t.resistance = resistance
             t.waveformID = tmp[5]
-            t.calculate_incident_V_I(G)
 
             if len(tmp) > 6:
                 # Check source start & source remove time parameters
@@ -329,6 +334,9 @@ def process_multicmds(multicmds, G):
                 t.start = 0
                 t.stop = G.timewindow
                 startstop = ' '
+
+            t.calculate_waveform_values(G)
+            t.calculate_incident_V_I(G)
 
             if G.messages:
                 print('Transmission line with polarity {} at {:g}m, {:g}m, {:g}m, resistance {:.1f} Ohms,'.format(t.polarisation, t.xcoord * G.dx, t.ycoord * G.dy, t.zcoord * G.dz, t.resistance) + startstop + 'using waveform {} created.'.format(t.waveformID))
@@ -359,19 +367,21 @@ def process_multicmds(multicmds, G):
             r.ycoordorigin = ycoord
             r.zcoordorigin = zcoord
 
-            # If no ID or outputs are specified, use default i.e Ex, Ey, Ez, Hx, Hy, Hz, Ix, Iy, Iz
+            # If no ID or outputs are specified, use default
             if len(tmp) == 3:
                 r.ID = r.__class__.__name__ + '(' + str(r.xcoord) + ',' + str(r.ycoord) + ',' + str(r.zcoord) + ')'
                 for key in Rx.defaultoutputs:
                     r.outputs[key] = np.zeros(G.iterations, dtype=floattype)
             else:
                 r.ID = tmp[3]
+                # Get allowable outputs
+                allowableoutputs = Rx.allowableoutputs
                 # Check and add field output names
                 for field in tmp[4::]:
-                    if field in Rx.availableoutputs:
+                    if field in allowableoutputs:
                         r.outputs[field] = np.zeros(G.iterations, dtype=floattype)
                     else:
-                        raise CmdInputError("'" + cmdname + ': ' + ' '.join(tmp) + "'" + ' contains an output type that is not available')
+                        raise CmdInputError("'" + cmdname + ': ' + ' '.join(tmp) + "'" + ' contains an output type that is not allowable. Allowable outputs in current context are {}'.format(allowableoutputs))
 
             if G.messages:
                 print('Receiver at {:g}m, {:g}m, {:g}m with output component(s) {} created.'.format(r.xcoord * G.dx, r.ycoord * G.dy, r.zcoord * G.dz, ', '.join(r.outputs)))
@@ -760,7 +770,7 @@ def process_multicmds(multicmds, G):
             if tmp[0] not in CFSParameter.scalingprofiles.keys() or tmp[4] not in CFSParameter.scalingprofiles.keys() or tmp[8] not in CFSParameter.scalingprofiles.keys():
                 raise CmdInputError("'" + cmdname + ': ' + ' '.join(tmp) + "'" + ' must have scaling type {}'.format(','.join(CFSParameter.scalingprofiles.keys())))
             if tmp[1] not in CFSParameter.scalingdirections or tmp[5] not in CFSParameter.scalingdirections or tmp[9] not in CFSParameter.scalingdirections:
-                raise CmdInputError("'" + cmdname + ': ' + ' '.join(tmp) + "'" + ' must have scaling type {}'.format(','.join(CFSParameter.scalingprofiles.keys())))
+                raise CmdInputError("'" + cmdname + ': ' + ' '.join(tmp) + "'" + ' must have scaling type {}'.format(','.join(CFSParameter.scalingdirections)))
             if float(tmp[2]) < 0 or float(tmp[3]) < 0 or float(tmp[6]) < 0 or float(tmp[7]) < 0 or float(tmp[10]) < 0:
                 raise CmdInputError("'" + cmdname + ': ' + ' '.join(tmp) + "'" + ' minimum and maximum scaling values must be greater than zero')
             if float(tmp[6]) < 1:
