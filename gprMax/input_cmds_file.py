@@ -24,11 +24,17 @@ from gprMax.exceptions import CmdInputError
 
 
 def process_python_include_code(inputfile, usernamespace):
-    """Looks for and processes any Python code found in the input file. It will ignore any lines that are comments, i.e. begin with a double hash (##), and any blank lines. It will also ignore any lines that do not begin with a hash (#) after it has processed Python commands. It will also process any include commands and insert the contents of the included file at that location.
+    """Looks for and processes any Python code found in the input file.
+    It will ignore any lines that are comments, i.e. begin with a
+    double hash (##), and any blank lines. It will also ignore any
+    lines that do not begin with a hash (#) after it has processed
+    Python commands. It will also process any include file commands
+    and insert the contents of the included file at that location.
 
     Args:
         inputfile (object): File object for input file.
-        usernamespace (dict): Namespace that can be accessed by user in any Python code blocks in input file.
+        usernamespace (dict): Namespace that can be accessed by user
+                in any Python code blocks in input file.
 
     Returns:
         processedlines (list): Input commands after Python processing.
@@ -36,7 +42,7 @@ def process_python_include_code(inputfile, usernamespace):
 
     # Strip out any newline characters and comments that must begin with double hashes
     inputlines = [line.rstrip() for line in inputfile if(not line.startswith('##') and line.rstrip('\n'))]
-    
+
     # Rewind input file in preparation for any subsequent reading function
     inputfile.seek(0)
 
@@ -73,39 +79,19 @@ def process_python_include_code(inputfile, usernamespace):
 
             # Separate commands from any other generated output
             hashcmds = []
-            pythonstdout = []
+            pythonout = []
             for line in codeout:
                 if line.startswith('#'):
                     hashcmds.append(line + '\n')
                 elif line:
-                    pythonstdout.append(line)
+                    pythonout.append(line)
 
             # Add commands to a list
             processedlines.extend(hashcmds)
 
             # Print any generated output that is not commands
-            if pythonstdout:
-                print('Python messages (from stdout): {}\n'.format(pythonstdout))
-
-        # Process any include commands
-        elif(inputlines[x].startswith('#include_file:')):
-            includefile = inputlines[x].split()
-
-            if len(includefile) != 2:
-                raise CmdInputError('#include_file requires exactly one parameter')
-
-            includefile = includefile[1]
-
-            # See if file exists at specified path and if not try input file directory
-            if not os.path.isfile(includefile):
-                includefile = os.path.join(usernamespace['inputdirectory'], includefile)
-
-            with open(includefile, 'r') as f:
-                # Strip out any newline characters and comments that must begin with double hashes
-                includelines = [includeline.rstrip() + '\n' for includeline in f if(not includeline.startswith('##') and includeline.rstrip('\n'))]
-
-            # Add lines from include file to list
-            processedlines.extend(includelines)
+            if pythonout:
+                print('Python messages (from stdout/stderr): {}\n'.format(pythonout))
 
         # Add any other commands to list
         elif(inputlines[x].startswith('#')):
@@ -115,23 +101,69 @@ def process_python_include_code(inputfile, usernamespace):
 
         x += 1
 
+    # Process any include file commands
+    processedlines = process_include_files(processedlines, inputfile)
+
     return processedlines
 
 
-def write_processed_file(inputfilename, modelrun, numbermodelruns, processedlines):
-    """Writes an input file after any Python code and include commands in the original input file have been processed.
+def process_include_files(hashcmds, inputfile):
+    """
+    Looks for and processes any include file commands and insert
+        the contents of the included file at that location.
 
     Args:
-        inputfilename (str): Name of the input file to open.
-        modelrun (int): Current model run number.
-        numbermodelruns (int): Total number of model runs.
-        processedlines (list): Input commands after after processing any Python code and include commands.
+        hashcmds (list): Input commands.
+        inputfile (object): File object for input file.
+
+    Returns:
+        processedincludecmds (list): Input commands after processing
+            any include file commands.
     """
 
-    if numbermodelruns == 1:
-        processedfile = os.path.splitext(inputfilename)[0] + '_processed.in'
-    else:
-        processedfile = os.path.splitext(inputfilename)[0] + str(modelrun) + '_processed.in'
+    processedincludecmds = []
+    x = 0
+    while x < len(hashcmds):
+        if hashcmds[x].startswith('#include_file:'):
+            includefile = hashcmds[x].split()
+
+            if len(includefile) != 2:
+                raise CmdInputError('#include_file requires exactly one parameter')
+
+            includefile = includefile[1]
+
+            # See if file exists at specified path and if not try input file directory
+            if not os.path.isfile(includefile):
+                includefile = os.path.join(os.path.dirname(inputfile.name), includefile)
+
+            with open(includefile, 'r') as f:
+                # Strip out any newline characters and comments that must begin with double hashes
+                includelines = [includeline.rstrip() + '\n' for includeline in f if(not includeline.startswith('##') and includeline.rstrip('\n'))]
+
+            # Add lines from include file
+            processedincludecmds.extend(includelines)
+
+        else:
+            processedincludecmds.append(hashcmds[x])
+
+        x += 1
+
+    return processedincludecmds
+
+
+def write_processed_file(processedlines, appendmodelnumber, G):
+    """
+    Writes an input file after any Python code and include commands
+    in the original input file have been processed.
+
+    Args:
+        processedlines (list): Input commands after after processing any
+            Python code and include commands.
+        appendmodelnumber (str): Text to append to filename.
+        G (class): Grid class instance - holds essential parameters describing the model.
+    """
+
+    processedfile = os.path.join(G.inputdirectory, os.path.splitext(G.inputfilename)[0] + appendmodelnumber + '_processed.in')
 
     with open(processedfile, 'w') as f:
         for item in processedlines:
@@ -141,7 +173,9 @@ def write_processed_file(inputfilename, modelrun, numbermodelruns, processedline
 
 
 def check_cmd_names(processedlines, checkessential=True):
-    """Checks the validity of commands, i.e. are they gprMax commands, and that all essential commands are present.
+    """
+    Checks the validity of commands, i.e. are they gprMax commands,
+        and that all essential commands are present.
 
     Args:
         processedlines (list): Input commands after Python processing.
@@ -158,17 +192,19 @@ def check_cmd_names(processedlines, checkessential=True):
     essentialcmds = ['#domain', '#dx_dy_dz', '#time_window']
 
     # Commands that there should only be one instance of in a model
-    singlecmds = dict.fromkeys(['#domain', '#dx_dy_dz', '#time_window', '#title', '#messages', '#num_threads', '#time_step_stability_factor', '#pml_cells', '#excitation_file', '#src_steps', '#rx_steps', '#taguchi', '#end_taguchi'], 'None')
+    singlecmds = dict.fromkeys(['#domain', '#dx_dy_dz', '#time_window', '#title', '#messages', '#num_threads', '#time_step_stability_factor', '#pml_cells', '#excitation_file', '#src_steps', '#rx_steps', '#taguchi', '#end_taguchi'], None)
 
     # Commands that there can be multiple instances of in a model - these will be lists within the dictionary
-    multiplecmds = {key: [] for key in ['#geometry_view', '#geometry_objects_write', '#material', '#soil_peplinski', '#add_dispersion_debye', '#add_dispersion_lorentz', '#add_dispersion_drude', '#waveform', '#voltage_source', '#hertzian_dipole', '#magnetic_dipole', '#transmission_line', '#rx', '#rx_array', '#snapshot', '#pml_cfs']}
+    multiplecmds = {key: [] for key in ['#geometry_view', '#geometry_objects_write', '#material', '#soil_peplinski', '#add_dispersion_debye', '#add_dispersion_lorentz', '#add_dispersion_drude', '#waveform', '#voltage_source', '#hertzian_dipole', '#magnetic_dipole', '#transmission_line', '#rx', '#rx_array', '#snapshot', '#pml_cfs', '#include_file']}
 
-    # Geometry object building commands that there can be multiple instances of in a model - these will be lists within the dictionary
+    # Geometry object building commands that there can be multiple instances
+    # of in a model - these will be lists within the dictionary
     geometrycmds = ['#geometry_objects_read', '#edge', '#plate', '#triangle', '#box', '#sphere', '#cylinder', '#cylindrical_sector', '#fractal_box', '#add_surface_roughness', '#add_surface_water', '#add_grass']
     # List to store all geometry object commands in order from input file
     geometry = []
 
-    # Check if command names are valid, if essential commands are present, and add command parameters to appropriate dictionary values or lists
+    # Check if command names are valid, if essential commands are present, and
+    # add command parameters to appropriate dictionary values or lists
     countessentialcmds = 0
     lindex = 0
     while(lindex < len(processedlines)):
@@ -176,7 +212,9 @@ def check_cmd_names(processedlines, checkessential=True):
         cmdname = cmd[0]
         cmdparams = cmd[1]
 
-        # Check if there is space between command name and parameters, i.e. check first character of parameter string. Ignore case when there are no parameters for a command, e.g. for #taguchi:
+        # Check if there is space between command name and parameters, i.e.
+        # check first character of parameter string. Ignore case when there
+        # are no parameters for a command, e.g. for #taguchi:
         if ' ' not in cmdparams[0] and len(cmdparams.strip('\n')) != 0:
             raise CmdInputError('There must be a space between the command name and parameters in ' + processedlines[lindex])
 
@@ -190,7 +228,7 @@ def check_cmd_names(processedlines, checkessential=True):
 
         # Assign command parameters as values to dictionary keys
         if cmdname in singlecmds:
-            if singlecmds[cmdname] == 'None':
+            if singlecmds[cmdname] is None:
                 singlecmds[cmdname] = cmd[1].strip(' \t\n')
             else:
                 raise CmdInputError('You can only have a single instance of ' + cmdname + ' in your model')

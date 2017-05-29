@@ -23,7 +23,9 @@ from struct import pack
 import numpy as np
 
 from gprMax.constants import floattype
-from gprMax.grid import Ix, Iy, Iz
+from gprMax.grid import Ix
+from gprMax.grid import Iy
+from gprMax.grid import Iz
 from gprMax.utilities import round_value
 
 
@@ -65,12 +67,11 @@ class Snapshot(object):
         self.time = time
         self.basefilename = filename
 
-    def prepare_vtk_imagedata(self, modelrun, numbermodelruns, G):
+    def prepare_vtk_imagedata(self, appendmodelnumber, G):
         """Prepares a VTK ImageData (.vti) file for a snapshot.
 
         Args:
-            modelrun (int): Current model run number.
-            numbermodelruns (int): Total number of model runs.
+            appendmodelnumber (str): Text to append to filename.
             G (class): Grid class instance - holds essential parameters describing the model.
         """
 
@@ -80,11 +81,7 @@ class Snapshot(object):
         self.vtk_nz = self.zf - self.zs
 
         # Create directory and construct filename from user-supplied name and model run number
-        if numbermodelruns == 1:
-            snapshotdir = os.path.join(G.inputdirectory, os.path.splitext(G.inputfilename)[0] + '_snaps')
-        else:
-            snapshotdir = os.path.join(G.inputdirectory, os.path.splitext(G.inputfilename)[0] + '_snaps' + str(modelrun))
-
+        snapshotdir = os.path.join(G.inputdirectory, os.path.splitext(G.inputfilename)[0] + '_snaps' + appendmodelnumber)
         if not os.path.exists(snapshotdir):
             os.mkdir(snapshotdir)
         self.filename = os.path.abspath(os.path.join(snapshotdir, self.basefilename + '.vti'))
@@ -139,7 +136,8 @@ class Snapshot(object):
             for j in range(self.ys, self.yf, self.dy):
                 for i in range(self.xs, self.xf, self.dx):
                     pbar.update(n=12)
-                    # The magnetic field component value at a point comes from average of 2 magnetic field component values in that cell and the following cell
+                    # The magnetic field component value at a point comes from average
+                    # of 2 magnetic field component values in that cell and the following cell
                     self.filehandle.write(pack(Snapshot.floatstring, (Hx[i, j, k] + Hx[i + 1, j, k]) / 2))
                     self.filehandle.write(pack(Snapshot.floatstring, (Hy[i, j, k] + Hy[i, j + 1, k]) / 2))
                     self.filehandle.write(pack(Snapshot.floatstring, (Hz[i, j, k] + Hz[i, j, k + 1]) / 2))

@@ -27,20 +27,39 @@ from gprMax.constants import floattype
 from gprMax.input_cmds_file import check_cmd_names
 from gprMax.input_cmds_multiuse import process_multicmds
 from gprMax.exceptions import CmdInputError
-from gprMax.fractals import FractalSurface, FractalVolume, Grass
-from gprMax.geometry_primitives import build_edge_x, build_edge_y, build_edge_z, build_face_yz, build_face_xz, build_face_xy, build_triangle, build_box, build_cylinder, build_cylindrical_sector, build_sphere, build_voxels_from_array, build_voxels_from_array_mask
+from gprMax.fractals import FractalSurface
+from gprMax.fractals import FractalVolume
+from gprMax.fractals import Grass
+from gprMax.geometry_primitives import build_edge_x
+from gprMax.geometry_primitives import build_edge_y
+from gprMax.geometry_primitives import build_edge_z
+from gprMax.geometry_primitives import build_face_yz
+from gprMax.geometry_primitives import build_face_xz
+from gprMax.geometry_primitives import build_face_xy
+from gprMax.geometry_primitives import build_triangle
+from gprMax.geometry_primitives import build_box
+from gprMax.geometry_primitives import build_cylinder
+from gprMax.geometry_primitives import build_cylindrical_sector
+from gprMax.geometry_primitives import build_sphere
+from gprMax.geometry_primitives import build_voxels_from_array
+from gprMax.geometry_primitives import build_voxels_from_array_mask
 from gprMax.materials import Material
-from gprMax.utilities import round_value, get_terminal_width
+from gprMax.utilities import round_value
+from gprMax.utilities import get_terminal_width
 
 
 def process_geometrycmds(geometry, G):
-    """This function checks the validity of command parameters, creates instances of classes of parameters, and calls functions to directly set arrays solid, rigid and ID.
+    """
+    This function checks the validity of command parameters, creates instances
+    of classes of parameters, and calls functions to directly set arrays
+    solid, rigid and ID.
 
     Args:
         geometry (list): Geometry commands in the model
     """
 
-    # Disable progress bar if on Windows as it does not update properly when messages are printed
+    # Disable progress bar if on Windows as it does not update properly
+    # when messages are printed
     if sys.platform == 'win32':
         tqdmdisable = True
     else:
@@ -92,16 +111,18 @@ def process_geometrycmds(geometry, G):
             # Open geometry object file and read/check spatial resolution attribute
             f = h5py.File(geofile, 'r')
             dx_dy_dz = f.attrs['dx, dy, dz']
-            if dx_dy_dz[0] != G.dx or dx_dy_dz[1] != G.dy or dx_dy_dz[2] != G.dz:
+            if round_value(dx_dy_dz[0] / G.dx) != 1 or round_value(dx_dy_dz[1] / G.dy) != 1 or round_value(dx_dy_dz[2] / G.dz) != 1:
                 raise CmdInputError("'" + ' '.join(tmp) + "'" + ' requires the spatial resolution of the geometry objects file to match the spatial resolution of the model')
 
             data = f['/data'][:]
 
-            # Should be int16 to allow for -1 which indicates background, i.e. don't build anything, but AustinMan/Woman maybe uint16
+            # Should be int16 to allow for -1 which indicates background, i.e.
+            # don't build anything, but AustinMan/Woman maybe uint16
             if data.dtype != 'int16':
                 data = data.astype('int16')
 
-            # Look to see if rigid and ID arrays are present (these should be present if the original geometry objects were written from gprMax)
+            # Look to see if rigid and ID arrays are present (these should be
+            # present if the original geometry objects were written from gprMax)
             try:
                 rigidE = f['/rigidE'][:]
                 rigidH = f['/rigidH'][:]
@@ -109,7 +130,7 @@ def process_geometrycmds(geometry, G):
                 G.solid[xs:xs + data.shape[0], ys:ys + data.shape[1], zs:zs + data.shape[2]] = data + numexistmaterials
                 G.rigidE[:, xs:xs + rigidE.shape[1], ys:ys + rigidE.shape[2], zs:zs + rigidE.shape[3]] = rigidE
                 G.rigidH[:, xs:xs + rigidH.shape[1], ys:ys + rigidH.shape[2], zs:zs + rigidH.shape[3]] = rigidH
-                G.ID[:, xs:xs + ID.shape[1], ys:ys + ID.shape[2], zs:zs + ID.shape[3]] = ID
+                G.ID[:, xs:xs + ID.shape[1], ys:ys + ID.shape[2], zs:zs + ID.shape[3]] = ID + numexistmaterials
                 if G.messages:
                     tqdm.write('Geometry objects from file {} inserted at {:g}m, {:g}m, {:g}m, with corresponding materials file {}.'.format(geofile, xs * G.dx, ys * G.dy, zs * G.dz, matfile))
             except KeyError:
@@ -1307,7 +1328,7 @@ def process_geometrycmds(geometry, G):
 
                     elif surface.surfaceID == 'xplus':
                         if not surface.ID:
-                            for i in range(surface.fractalrange[0], surface.fractalrange[1] ):
+                            for i in range(surface.fractalrange[0], surface.fractalrange[1]):
                                 for j in range(surface.ys, surface.yf):
                                     for k in range(surface.zs, surface.zf):
                                         if i < surface.fractalsurface[j - surface.ys, k - surface.zs]:

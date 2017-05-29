@@ -30,31 +30,35 @@ import numpy as np
 
 from gprMax.constants import floattype
 from gprMax.exceptions import CmdInputError
-from gprMax.gprMax import run_std_sim, run_mpi_sim
-from gprMax.utilities import get_terminal_width, open_path_file
+from gprMax.gprMax import run_std_sim
+from gprMax.gprMax import run_mpi_sim
+from gprMax.utilities import get_terminal_width
+from gprMax.utilities import  open_path_file
 
 
-def run_opt_sim(args, numbermodelruns, inputfile, usernamespace):
+def run_opt_sim(args, inputfile, usernamespace):
     """Run a simulation using Taguchi's optmisation process.
 
     Args:
         args (dict): Namespace with command line arguments
-        numbermodelruns (int): Total number of model runs.
         inputfile (object): File object for the input file.
-        usernamespace (dict): Namespace that can be accessed by user in any Python code blocks in input file.
+        usernamespace (dict): Namespace that can be accessed by user
+                in any Python code blocks in input file.
     """
 
     tsimstart = perf_counter()
 
-    if numbermodelruns > 1:
+    if args.n > 1:
         raise CmdInputError('When a Taguchi optimisation is being carried out the number of model runs argument is not required')
 
     inputfileparts = os.path.splitext(inputfile.name)
 
-    # Default maximum number of iterations of optimisation to perform (used if the stopping criterion is not achieved)
+    # Default maximum number of iterations of optimisation to perform (used
+    # if the stopping criterion is not achieved)
     maxiterations = 20
 
-    # Process Taguchi code blocks in the input file; pass in ordered dictionary to hold parameters to optimise
+    # Process Taguchi code blocks in the input file; pass in ordered
+    # dictionary to hold parameters to optimise
     tmp = usernamespace.copy()
     tmp.update({'optparams': OrderedDict()})
     taguchinamespace = taguchi_code_blocks(inputfile, tmp)
@@ -99,8 +103,8 @@ def run_opt_sim(args, numbermodelruns, inputfile, usernamespace):
     iteration = 0
     while iteration < maxiterations:
         # Reset number of model runs to number of experiments
-        numbermodelruns = N
-        usernamespace['number_model_runs'] = numbermodelruns
+        args.n = N
+        usernamespace['number_model_runs'] = N
 
         # Fitness values for each experiment
         fitnessvalues = []
@@ -109,21 +113,26 @@ def run_opt_sim(args, numbermodelruns, inputfile, usernamespace):
         optparams, levels, levelsdiff = calculate_ranges_experiments(optparams, optparamsinit, levels, levelsopt, levelsdiff, OA, N, k, s, iteration)
 
         # Run model for each experiment
-        if args.mpi:  # Mixed mode MPI/OpenMP - MPI task farm for models with each model parallelised with OpenMP
-            run_mpi_sim(args, numbermodelruns, inputfile, usernamespace, optparams)
-        else:  # Standard behaviour - models run serially with each model parallelised with OpenMP
-            run_std_sim(args, numbermodelruns, inputfile, usernamespace, optparams)
+        # Mixed mode MPI with OpenMP or CUDA - MPI task farm for models with
+        # each model parallelised with OpenMP (CPU) or CUDA (GPU)
+        if args.mpi:
+            run_mpi_sim(args, inputfile, usernamespace, optparams)
+        # Standard behaviour - models run serially with each model parallelised
+        # with OpenMP (CPU) or CUDA (GPU)
+        else:
+            run_std_sim(args, inputfile, usernamespace, optparams)
 
         # Calculate fitness value for each experiment
-        for experiment in range(1, numbermodelruns + 1):
+        for experiment in range(1, N + 1):
             outputfile = inputfileparts[0] + str(experiment) + '.out'
             fitnessvalues.append(fitness_metric(outputfile, fitness['args']))
             os.remove(outputfile)
 
-        taguchistr = '\n--- Taguchi optimisation, iteration {}: {} initial experiments with fitness values {}.'.format(iteration + 1, numbermodelruns, fitnessvalues)
+        taguchistr = '\n--- Taguchi optimisation, iteration {}: {} initial experiments with fitness values {}.'.format(iteration + 1, N, fitnessvalues)
         print('{} {}\n'.format(taguchistr, '-' * (get_terminal_width() - 1 - len(taguchistr))))
 
-        # Calculate optimal levels from fitness values by building a response table; update dictionary of parameters with optimal values
+        # Calculate optimal levels from fitness values by building a response
+        # table; update dictionary of parameters with optimal values
         optparams, levelsopt = calculate_optimal_levels(optparams, levels, levelsopt, fitnessvalues, OA, N, k)
 
         # Update dictionary with history of parameters with optimal values
@@ -131,9 +140,16 @@ def run_opt_sim(args, numbermodelruns, inputfile, usernamespace):
             optparamshist[key].append(value[0])
 
         # Run a confirmation experiment with optimal values
-        numbermodelruns = 1
-        usernamespace['number_model_runs'] = numbermodelruns
-        run_std_sim(args, numbermodelruns, inputfile, usernamespace, optparams)
+        args.n = 1
+        usernamespace['number_model_runs'] = 1
+        # Mixed mode MPI with OpenMP or CUDA - MPI task farm for models with
+        # each model parallelised with OpenMP (CPU) or CUDA (GPU)
+        if args.mpi:
+            run_mpi_sim(args, inputfile, usernamespace, optparams)
+        # Standard behaviour - models run serially with each model parallelised
+        # with OpenMP (CPU) or CUDA (GPU)
+        else:
+            run_std_sim(args, inputfile, usernamespace, optparams)
 
         # Calculate fitness value for confirmation experiment
         outputfile = inputfileparts[0] + '.out'
@@ -153,9 +169,9 @@ def run_opt_sim(args, numbermodelruns, inputfile, usernamespace):
             break
 
         # Stop optimisation if successive fitness values are within a percentage threshold
+        fitnessvaluesthres = 0.1
         if iteration > 2:
             fitnessvaluesclose = (np.abs(fitnessvalueshist[iteration - 2] - fitnessvalueshist[iteration - 1]) / fitnessvalueshist[iteration - 1]) * 100
-            fitnessvaluesthres = 0.1
             if fitnessvaluesclose < fitnessvaluesthres:
                 taguchistr = '\n--- Taguchi optimisation stopped as successive fitness values within {}%'.format(fitnessvaluesthres)
                 print('{} {}\n'.format(taguchistr, '-' * (get_terminal_width() - 1 - len(taguchistr))))
@@ -176,11 +192,15 @@ def run_opt_sim(args, numbermodelruns, inputfile, usernamespace):
 
 
 def taguchi_code_blocks(inputfile, taguchinamespace):
-    """Looks for and processes a Taguchi code block (containing Python code) in the input file. It will ignore any lines that are comments, i.e. begin with a double hash (##), and any blank lines.
+    """
+    Looks for and processes a Taguchi code block (containing Python code) in
+    the input file. It will ignore any lines that are comments, i.e. begin
+    with a double hash (##), and any blank lines.
 
     Args:
         inputfile (object): File object for the input file.
-        taguchinamespace (dict): Namespace that can be accessed by user a Taguchi code block in input file.
+        taguchinamespace (dict): Namespace that can be accessed by user a
+                Taguchi code block in input file.
 
     Returns:
         processedlines (list): Input commands after Python processing.
@@ -188,10 +208,10 @@ def taguchi_code_blocks(inputfile, taguchinamespace):
 
     # Strip out any newline characters and comments that must begin with double hashes
     inputlines = [line.rstrip() for line in inputfile if(not line.startswith('##') and line.rstrip('\n'))]
-    
+
     # Rewind input file in preparation for passing to standard command reading function
     inputfile.seek(0)
-    
+
     # Store length of dict
     taglength = len(taguchinamespace)
 
@@ -224,10 +244,13 @@ def taguchi_code_blocks(inputfile, taguchinamespace):
 
 
 def construct_OA(optparams):
-    """Load an orthogonal array (OA) from a numpy file. Configure and return OA and properties of OA.
+    """
+    Load an orthogonal array (OA) from a numpy file. Configure and
+    return OA and properties of OA.
 
     Args:
-        optparams (dict): Dictionary containing name of parameters to optimise and their initial ranges
+        optparams (dict): Dictionary containing name of parameters to
+                optimise and their initial ranges
 
     Returns:
         OA (array): Orthogonal array
@@ -288,7 +311,8 @@ def construct_OA(optparams):
         # Number of columns
         cols = int((N - 1) / (s - 1))
 
-        # Algorithm to construct OA from: http://ieeexplore.ieee.org/xpl/articleDetails.jsp?reload=true&arnumber=6812898
+        # Algorithm to construct OA from:
+        # http://ieeexplore.ieee.org/xpl/articleDetails.jsp?reload=true&arnumber=6812898
         OA = np.zeros((N + 1, cols + 1), dtype=np.int8)
 
         # Construct basic columns
@@ -304,7 +328,8 @@ def construct_OA(optparams):
                 for kk in range(1, s):
                     OA[:, col + (jj - 1) * (s - 1) + kk] = np.mod(OA[:, jj] * kk + OA[:, col], s)
 
-        # First row and first columns are unneccessary, only there to match algorithm, and cut down columns to number of parameters to optimise
+        # First row and first columns are unneccessary, only there to
+        # match algorithm, and cut down columns to number of parameters to optimise
         OA = OA[1:, 1:k + 1]
 
     return OA, N, cols, k, s, t
@@ -419,7 +444,8 @@ def calculate_optimal_levels(optparams, levels, levelsopt, fitnessvalues, OA, N,
         # Calculate optimal level from table of responses
         optlevel = np.where(responses == np.amax(responses))[0]
 
-        # If 2 experiments produce the same fitness value pick first level (this shouldn't happen if the fitness function is designed correctly)
+        # If 2 experiments produce the same fitness value pick first level
+        # (this shouldn't happen if the fitness function is designed correctly)
         if len(optlevel) > 1:
             optlevel = optlevel[0]
 

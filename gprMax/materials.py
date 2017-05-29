@@ -18,7 +18,9 @@
 
 import numpy as np
 
-from gprMax.constants import e0, m0, complextype
+from gprMax.constants import e0
+from gprMax.constants import m0
+from gprMax.constants import complextype
 
 
 class Material(object):
@@ -83,10 +85,12 @@ class Material(object):
         """Calculates the electric update coefficients of the material.
 
         Args:
-            G (class): Grid class instance - holds essential parameters describing the model.
+            G (class): Grid class instance - holds essential parameters
+                    describing the model.
         """
 
-        # The implementation of the dispersive material modelling comes from the derivation in: http://dx.doi.org/10.1109/TAP.2014.2308549
+        # The implementation of the dispersive material modelling comes from the
+        # derivation in: http://dx.doi.org/10.1109/TAP.2014.2308549
         if self.maxpoles > 0:
             self.w = np.zeros(self.maxpoles, dtype=complextype)
             self.q = np.zeros(self.maxpoles, dtype=complextype)
@@ -138,9 +142,41 @@ class Material(object):
             self.CBz = (1 / G.dz) * 1 / EA
             self.srce = 1 / EA
 
+    def calculate_er(self, freq):
+        """
+        Calculates the complex relative permittivity of the material at a specific frequency.
+
+        Args:
+            freq (float): Frequency used to calculate complex relative permittivity.
+            
+        Returns:
+            er (float): Complex relative permittivity.
+        """
+        
+        # This will be permittivity at infinite frequency if the material is dispersive
+        er = self.er
+        
+        if self.poles > 0:
+            w = 2 * np.pi * freq
+            er += self.se / (w * e0)
+            if 'debye' in self.type:
+                for pole in range(self.poles):
+                    er += self.deltaer[pole] / (1 + 1j * w * self.tau[pole])
+            elif 'lorentz' in self.type:
+                for pole in range(self.poles):
+                    er += (self.deltaer[pole] * self.tau[pole]**2) / (self.tau[pole]**2 + 2j * w * self.alpha[pole] - w**2)
+            elif 'drude' in self.type:
+                for pole in range(self.poles):
+                    ersum += self.tau[pole]**2 / (w**2 - 1j * w * self.alpha[pole])
+                    er -= ersum
+    
+        return er
+
 
 def process_materials(G):
-    """Process complete list of materials - calculate update coefficients, store in arrays, and build text list of materials/properties
+    """
+    Process complete list of materials - calculate update coefficients,
+        store in arrays, and build text list of materials/properties
 
     Args:
         G (class): Grid class instance - holds essential parameters describing the model.
@@ -149,12 +185,10 @@ def process_materials(G):
         materialsdata (list): List of material IDs, names, and properties to print a table.
     """
 
-    if G.messages:
-        print('\nMaterials:')
-        if Material.maxpoles == 0:
-            materialsdata = [['\nID', '\nName', '\nType', '\neps_r', 'sigma\n[S/m]', '\nmu_r', 'sigma*\n[S/m]', 'Dielectric\nsmoothable']]
-        else:
-            materialsdata = [['\nID', '\nName', '\nType', '\neps_r', 'sigma\n[S/m]', 'Delta\neps_r', 'tau\n[s]', 'omega\n[Hz]', 'delta\n[Hz]', 'gamma\n[Hz]', '\nmu_r', 'sigma*\n[S/m]', 'Dielectric\nsmoothable']]
+    if Material.maxpoles == 0:
+        materialsdata = [['\nID', '\nName', '\nType', '\neps_r', 'sigma\n[S/m]', '\nmu_r', 'sigma*\n[Ohm/m]', 'Dielectric\nsmoothable']]
+    else:
+        materialsdata = [['\nID', '\nName', '\nType', '\neps_r', 'sigma\n[S/m]', 'Delta\neps_r', 'tau\n[s]', 'omega\n[Hz]', 'delta\n[Hz]', 'gamma\n[Hz]', '\nmu_r', 'sigma*\n[Ohm/m]', 'Dielectric\nsmoothable']]
 
     for material in G.materials:
         # Calculate update coefficients for material
@@ -172,50 +206,45 @@ def process_materials(G):
                 G.updatecoeffsdispersive[material.numID, z:z + 3] = e0 * material.eqt2[pole], material.eqt[pole], material.zt[pole]
                 z += 3
 
-        if G.messages:
-            materialtext = []
-            materialtext.append(str(material.numID))
-            materialtext.append(material.ID[:50] if len(material.ID) > 50 else material.ID)
-            materialtext.append(material.type)
-            materialtext.append('{:g}'.format(material.er))
-            materialtext.append('{:g}'.format(material.se))
-            if Material.maxpoles > 0:
-                if 'debye' in material.type:
-                    materialtext.append(', '.join('{:g}'.format(deltaer) for deltaer in material.deltaer))
-                    materialtext.append(', '.join('{:g}'.format(tau) for tau in material.tau))
-                    materialtext.append('')
-                    materialtext.append('')
-                    materialtext.append('')
-                elif 'lorentz' in material.type:
-                    materialtext.append(', '.join('{:g}'.format(deltaer) for deltaer in material.deltaer))
-                    materialtext.append('')
-                    materialtext.append(', '.join('{:g}'.format(tau) for tau in material.tau))
-                    materialtext.append(', '.join('{:g}'.format(alpha) for alpha in material.alpha))
-                    materialtext.append('')
-                elif 'drude' in material.type:
-                    materialtext.append('')
-                    materialtext.append('')
-                    materialtext.append(', '.join('{:g}'.format(tau) for tau in material.tau))
-                    materialtext.append('')
-                    materialtext.append(', '.join('{:g}'.format(alpha) for alpha in material.alpha))
-                else:
-                    materialtext.append('')
-                    materialtext.append('')
-                    materialtext.append('')
-                    materialtext.append('')
-                    materialtext.append('')
+        # Construct information on material properties for printing table
+        materialtext = []
+        materialtext.append(str(material.numID))
+        materialtext.append(material.ID[:50] if len(material.ID) > 50 else material.ID)
+        materialtext.append(material.type)
+        materialtext.append('{:g}'.format(material.er))
+        materialtext.append('{:g}'.format(material.se))
+        if Material.maxpoles > 0:
+            if 'debye' in material.type:
+                materialtext.append('\n'.join('{:g}'.format(deltaer) for deltaer in material.deltaer))
+                materialtext.append('\n'.join('{:g}'.format(tau) for tau in material.tau))
+                materialtext.extend(['', '', ''])
+            elif 'lorentz' in material.type:
+                materialtext.append(', '.join('{:g}'.format(deltaer) for deltaer in material.deltaer))
+                materialtext.append('')
+                materialtext.append(', '.join('{:g}'.format(tau) for tau in material.tau))
+                materialtext.append(', '.join('{:g}'.format(alpha) for alpha in material.alpha))
+                materialtext.append('')
+            elif 'drude' in material.type:
+                materialtext.extend(['', ''])
+                materialtext.append(', '.join('{:g}'.format(tau) for tau in material.tau))
+                materialtext.append('')
+                materialtext.append(', '.join('{:g}'.format(alpha) for alpha in material.alpha))
+            else:
+                materialtext.extend(['', '', '', '', ''])
 
-            materialtext.append('{:g}'.format(material.mr))
-            materialtext.append('{:g}'.format(material.sm))
-            materialtext.append(material.averagable)
-            materialsdata.append(materialtext)
+        materialtext.append('{:g}'.format(material.mr))
+        materialtext.append('{:g}'.format(material.sm))
+        materialtext.append(material.averagable)
+        materialsdata.append(materialtext)
 
-    if G.messages:
-        return materialsdata
+    return materialsdata
 
 
 class PeplinskiSoil(object):
-    """Soil objects that are characterised according to a mixing model by Peplinski (http://dx.doi.org/10.1109/36.387598)."""
+    """
+    Soil objects that are characterised according to a mixing
+    model by Peplinski (http://dx.doi.org/10.1109/36.387598).
+    """
 
     def __init__(self, ID, sandfraction, clayfraction, bulkdensity, sandpartdensity, watervolfraction):
         """
@@ -237,7 +266,9 @@ class PeplinskiSoil(object):
         self.startmaterialnum = 0
 
     def calculate_debye_properties(self, nbins, G):
-        """Calculates the real and imaginery part of a Debye model for the soil as well as a conductivity. It uses a semi-empirical model (http://dx.doi.org/10.1109/36.387598).
+        """
+        Calculates the real and imaginery part of a Debye model for the soil as
+        well as a conductivity. It uses a semi-empirical model (http://dx.doi.org/10.1109/36.387598).
 
         Args:
             nbins (int): Number of bins to use to create the different materials.
@@ -261,7 +292,7 @@ class PeplinskiSoil(object):
         # sigf2 = -1.645 + 1.939 * self.rb - 2.25622 * self.S + 1.594 * self.C
 
         # Generate a set of bins based on the given volumetric water fraction values
-        mubins = np.linspace(self.mu[0], self.mu[1], nbins + 1)
+        mubins = np.linspace(self.mu[0], self.mu[1], nbins)
         # Generate a range of volumetric water fraction values the mid-point of each bin to make materials from
         mumaterials = mubins + (mubins[1] - mubins[0]) / 2
 

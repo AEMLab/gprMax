@@ -24,9 +24,14 @@ from colorama import init, Fore, Style
 init()
 import numpy as np
 
-from gprMax.constants import c, floattype
-from gprMax.exceptions import CmdInputError, GeneralError
-from gprMax.utilities import get_host_info, human_size, memory_usage, round_value
+from gprMax.constants import c
+from gprMax.constants import floattype
+from gprMax.exceptions import CmdInputError
+from gprMax.exceptions import GeneralError
+from gprMax.utilities import get_host_info
+from gprMax.utilities import human_size
+from gprMax.utilities import memory_usage
+from gprMax.utilities import round_value
 from gprMax.waveforms import Waveform
 
 
@@ -41,7 +46,7 @@ def process_singlecmds(singlecmds, G):
     # Check validity of command parameters in order needed
     # messages
     cmd = '#messages'
-    if singlecmds[cmd] != 'None':
+    if singlecmds[cmd] is not None:
         tmp = singlecmds[cmd].split()
         if len(tmp) != 1:
             raise CmdInputError(cmd + ' requires exactly one parameter')
@@ -54,7 +59,7 @@ def process_singlecmds(singlecmds, G):
 
     # Title
     cmd = '#title'
-    if singlecmds[cmd] != 'None':
+    if singlecmds[cmd] is not None:
         G.title = singlecmds[cmd]
         if G.messages:
             print('Model title: {}'.format(G.title))
@@ -66,19 +71,18 @@ def process_singlecmds(singlecmds, G):
     cmd = '#num_threads'
     if sys.platform == 'darwin':
         os.environ['OMP_WAIT_POLICY'] = 'ACTIVE'  # Should waiting threads consume CPU power (can drastically effect performance)
-    os.environ['OMP_DYNAMIC'] = 'FALSE' # Number of threads may be adjusted by the run time environment to best utilize system resources
-    os.environ['OMP_PLACES'] = 'cores' # Each place corresponds to a single core (having one or more hardware threads)
-    #os.environ['OMP_PLACES'] = '{0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30}'
+    os.environ['OMP_DYNAMIC'] = 'FALSE'  # Number of threads may be adjusted by the run time environment to best utilize system resources
+    os.environ['OMP_PLACES'] = 'cores'  # Each place corresponds to a single core (having one or more hardware threads)
     os.environ['OMP_PROC_BIND'] = 'TRUE'  # Bind threads to physical cores
     # os.environ['OMP_DISPLAY_ENV'] = 'TRUE' # Prints OMP version and environment variables (useful for debug)
 
-    # Catch bug with Windows Subsystem for Linux (https://github.com/Microsoft/BashOnWindows/issues/785)
+    # Catch bug with Windows Subsystem for Linux (https://github.com/Microsoft/BashOnWindows/issues/785)
     if 'Microsoft' in hostinfo['osversion']:
         os.environ['KMP_AFFINITY'] = 'disabled'
         del os.environ['OMP_PLACES']
         del os.environ['OMP_PROC_BIND']
 
-    if singlecmds[cmd] != 'None':
+    if singlecmds[cmd] is not None:
         tmp = tuple(int(x) for x in singlecmds[cmd].split())
         if len(tmp) != 1:
             raise CmdInputError(cmd + ' requires exactly one parameter to specify the number of threads to use')
@@ -130,8 +134,9 @@ def process_singlecmds(singlecmds, G):
 
     # Estimate memory (RAM) usage
     memestimate = memory_usage(G)
+    # Check if model can be built and/or run on host
     if memestimate > hostinfo['ram']:
-        print(Fore.RED + 'WARNING: Estimated memory (RAM) required ~{} exceeds {} detected!\n'.format(human_size(memestimate), human_size(hostinfo['ram'], a_kilobyte_is_1024_bytes=True)) + Style.RESET_ALL)
+        raise GeneralError('Estimated memory (RAM) required ~{} exceeds {} detected!\n'.format(human_size(memestimate), human_size(hostinfo['ram'], a_kilobyte_is_1024_bytes=True)))
     if G.messages:
         print('Estimated memory (RAM) required: ~{}'.format(human_size(memestimate)))
 
@@ -163,7 +168,7 @@ def process_singlecmds(singlecmds, G):
 
     # Time step stability factor
     cmd = '#time_step_stability_factor'
-    if singlecmds[cmd] != 'None':
+    if singlecmds[cmd] is not None:
         tmp = tuple(float(x) for x in singlecmds[cmd].split())
         if len(tmp) != 1:
             raise CmdInputError(cmd + ' requires exactly one parameter')
@@ -198,7 +203,7 @@ def process_singlecmds(singlecmds, G):
 
     # PML
     cmd = '#pml_cells'
-    if singlecmds[cmd] != 'None':
+    if singlecmds[cmd] is not None:
         tmp = singlecmds[cmd].split()
         if len(tmp) != 1 and len(tmp) != 6:
             raise CmdInputError(cmd + ' requires either one or six parameters')
@@ -217,7 +222,7 @@ def process_singlecmds(singlecmds, G):
 
     # src_steps
     cmd = '#src_steps'
-    if singlecmds[cmd] != 'None':
+    if singlecmds[cmd] is not None:
         tmp = singlecmds[cmd].split()
         if len(tmp) != 3:
             raise CmdInputError(cmd + ' requires exactly three parameters')
@@ -229,7 +234,7 @@ def process_singlecmds(singlecmds, G):
 
     # rx_steps
     cmd = '#rx_steps'
-    if singlecmds[cmd] != 'None':
+    if singlecmds[cmd] is not None:
         tmp = singlecmds[cmd].split()
         if len(tmp) != 3:
             raise CmdInputError(cmd + ' requires exactly three parameters')
@@ -241,7 +246,7 @@ def process_singlecmds(singlecmds, G):
 
     # Excitation file for user-defined source waveforms
     cmd = '#excitation_file'
-    if singlecmds[cmd] != 'None':
+    if singlecmds[cmd] is not None:
         tmp = singlecmds[cmd].split()
         if len(tmp) != 1:
             raise CmdInputError(cmd + ' requires exactly one parameter')

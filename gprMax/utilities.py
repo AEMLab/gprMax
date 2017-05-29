@@ -26,7 +26,9 @@ from shutil import get_terminal_size
 import sys
 import textwrap
 
-from colorama import init, Fore, Style
+from colorama import init
+from colorama import Fore
+from colorama import Style
 init()
 import numpy as np
 
@@ -81,7 +83,9 @@ def logo(version):
 
 @contextmanager
 def open_path_file(path_or_file):
-    """Accepts either a path as a string or a file object and returns a file object (http://stackoverflow.com/a/6783680).
+    """
+    Accepts either a path as a string or a file object and returns a file
+    object (http://stackoverflow.com/a/6783680).
 
     Args:
         path_or_file: path as a string or a file object.
@@ -155,30 +159,43 @@ def get_host_info():
     """Get information about the machine, CPU, RAM, and OS.
 
     Returns:
-        hostinfo (dict): Manufacturer and model of machine; description of CPU type, speed, cores; RAM; name and version of operating system.
+        hostinfo (dict): Manufacturer and model of machine; description of CPU
+                type, speed, cores; RAM; name and version of operating system.
     """
+
+    # Default to 'unknown' if any of the detection fails
+    manufacturer = model = cpuID = sockets = threadspercore = 'unknown'
 
     # Windows
     if sys.platform == 'win32':
-        manufacturer = subprocess.check_output("wmic csproduct get vendor", shell=True).decode('utf-8').strip()
-        manufacturer = manufacturer.split('\n')[1]
-        model = subprocess.check_output("wmic computersystem get model", shell=True).decode('utf-8').strip()
-        model = model.split('\n')[1]
+        # Manufacturer/model
+        try:
+            manufacturer = subprocess.check_output("wmic csproduct get vendor", shell=True, stderr=subprocess.STDOUT).decode('utf-8').strip()
+            manufacturer = manufacturer.split('\n')[1]
+            model = subprocess.check_output("wmic computersystem get model", shell=True, stderr=subprocess.STDOUT).decode('utf-8').strip()
+            model = model.split('\n')[1]
+        except subprocess.CalledProcessError:
+            pass
         machineID = manufacturer + ' ' + model
 
         # CPU information
-        allcpuinfo = subprocess.check_output("wmic cpu get Name", shell=True).decode('utf-8').strip()
-        allcpuinfo = allcpuinfo.split('\n')
-        sockets = 0
-        for line in allcpuinfo:
-            if 'CPU' in line:
-                cpuID = line.strip()
-                sockets += 1
+        try:
+            allcpuinfo = subprocess.check_output("wmic cpu get Name", shell=True, stderr=subprocess.STDOUT).decode('utf-8').strip()
+            allcpuinfo = allcpuinfo.split('\n')
+            sockets = 0
+            for line in allcpuinfo:
+                if 'CPU' in line:
+                    cpuID = line.strip()
+                    sockets += 1
+        except subprocess.CalledProcessError:
+            pass
+
+        # Hyperthreading
         if psutil.cpu_count(logical=False) != psutil.cpu_count(logical=True):
             hyperthreading = True
         else:
             hyperthreading = False
-    
+
         # OS version
         if platform.machine().endswith('64'):
             osbit = ' (64-bit)'
@@ -188,20 +205,29 @@ def get_host_info():
 
     # Mac OS X/macOS
     elif sys.platform == 'darwin':
+        # Manufacturer/model
         manufacturer = 'Apple'
-        model = subprocess.check_output("sysctl -n hw.model", shell=True).decode('utf-8').strip()
+        try:
+            model = subprocess.check_output("sysctl -n hw.model", shell=True, stderr=subprocess.STDOUT).decode('utf-8').strip()
+        except subprocess.CalledProcessError:
+            pass
         machineID = manufacturer + ' ' + model
-        machineID = machineID.strip()
 
         # CPU information
-        sockets = subprocess.check_output("sysctl -n hw.packages", shell=True).decode('utf-8').strip()
-        cpuID = subprocess.check_output("sysctl -n machdep.cpu.brand_string", shell=True).decode('utf-8').strip()
-        cpuID = ' '.join(cpuID.split())
+        try:
+            sockets = subprocess.check_output("sysctl -n hw.packages", shell=True, stderr=subprocess.STDOUT).decode('utf-8').strip()
+            sockets = int(sockets)
+            cpuID = subprocess.check_output("sysctl -n machdep.cpu.brand_string", shell=True, stderr=subprocess.STDOUT).decode('utf-8').strip()
+            cpuID = ' '.join(cpuID.split())
+        except subprocess.CalledProcessError:
+            pass
+
+        # Hyperthreading
         if psutil.cpu_count(logical=False) != psutil.cpu_count(logical=True):
             hyperthreading = True
         else:
             hyperthreading = False
-        
+
         # OS version
         if int(platform.mac_ver()[0].split('.')[1]) < 12:
             osversion = 'Mac OS X (' + platform.mac_ver()[0] + ')'
@@ -210,33 +236,40 @@ def get_host_info():
 
     # Linux
     elif sys.platform == 'linux':
+        # Manufacturer/model
         try:
             manufacturer = subprocess.check_output("cat /sys/class/dmi/id/sys_vendor", shell=True, stderr=subprocess.STDOUT).decode('utf-8').strip()
             model = subprocess.check_output("cat /sys/class/dmi/id/product_name", shell=True, stderr=subprocess.STDOUT).decode('utf-8').strip()
-            machineID = manufacturer + ' ' + model
         except subprocess.CalledProcessError:
-            machineID = 'unknown'
+            pass
+        machineID = manufacturer + ' ' + model
 
         # CPU information
-        cpuIDinfo = subprocess.check_output("cat /proc/cpuinfo", shell=True, stderr=subprocess.STDOUT).decode('utf-8').strip()
-        for line in cpuIDinfo.split('\n'):
-            if re.search('model name', line):
-                cpuID = re.sub('.*model name.*:', '', line, 1).strip()
-        allcpuinfo = subprocess.check_output("lscpu", shell=True).decode('utf-8').strip()
-        for line in allcpuinfo.split('\n'):
-            if 'Thread(s) per core' in line:
-                threadspercore = int(line.strip()[-1])
-            if 'Socket(s)' in line:
-                sockets = int(line.strip()[-1])
-        if threadspercore == 1:
-            hyperthreading = False
-        elif threadspercore == 2:
+        try:
+            cpuIDinfo = subprocess.check_output("cat /proc/cpuinfo", shell=True, stderr=subprocess.STDOUT).decode('utf-8').strip()
+            for line in cpuIDinfo.split('\n'):
+                if re.search('model name', line):
+                    cpuID = re.sub('.*model name.*:', '', line, 1).strip()
+            allcpuinfo = subprocess.check_output("lscpu", shell=True, stderr=subprocess.STDOUT).decode('utf-8').strip()
+            for line in allcpuinfo.split('\n'):
+                if 'Socket(s)' in line:
+                    sockets = int(line.strip()[-1])
+                if 'Thread(s) per core' in line:
+                    threadspercore = int(line.strip()[-1])
+        except subprocess.CalledProcessError:
+            pass
+
+        # Hyperthreading
+        if threadspercore == 2:
             hyperthreading = True
+        else:
+            hyperthreading = False
 
         # OS version
         osrelease = subprocess.check_output("cat /proc/sys/kernel/osrelease", shell=True).decode('utf-8').strip()
         osversion = 'Linux (' + osrelease + ', ' + platform.linux_distribution()[0] + ')'
 
+    # Dictionary of host information
     hostinfo = {}
     hostinfo['machineID'] = machineID.strip()
     hostinfo['sockets'] = sockets
@@ -245,7 +278,8 @@ def get_host_info():
     hostinfo['hyperthreading'] = hyperthreading
     hostinfo['logicalcores'] = psutil.cpu_count()
     try:
-        hostinfo['physicalcores'] = psutil.cpu_count(logical=False) # Get number of physical CPU cores, i.e. avoid hyperthreading with OpenMP
+        # Get number of physical CPU cores, i.e. avoid hyperthreading with OpenMP
+        hostinfo['physicalcores'] = psutil.cpu_count(logical=False)
     except ValueError:
         hostinfo['physicalcores'] = hostinfo['logicalcores']
     hostinfo['ram'] = psutil.virtual_memory().total

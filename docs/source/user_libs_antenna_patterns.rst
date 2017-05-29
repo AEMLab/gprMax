@@ -9,7 +9,7 @@ Information
 
 **Author/Contact**: Craig Warren (Craig.Warren@ed.ac.uk), University of Edinburgh
 
-**License**: Creative Commons Attribution-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/)
+**License**: `Creative Commons Attribution-ShareAlike 4.0 International License <http://creativecommons.org/licenses/by-sa/4.0/>`_
 
 **Attribution/cite**: Warren, C., Giannopoulos, A. (2016). Characterisation of a Ground Penetrating Radar Antenna in Lossless Homogeneous and Lossy Heterogeneous Environments. *Signal Processing* (http://dx.doi.org/10.1016/j.sigpro.2016.04.010)
 
@@ -40,8 +40,8 @@ How to use the module
 
 * Firstly you should familiarise yourself with the example model input file. Edit the input file as desired and run one of the simulations for either E-plane or H-plane patterns.
 * Whilst the simulation is running edit the 'user configurable paramters' sections of the ``initial_save.py`` and ``plot_fields.py`` modules to match the setup of the simulation.
-* Once the simulation has completed, run the ``initial_save.py`` module on the output file, e.g. for the E-plane ``python -m user_libs.antenna_patterns.initial_save antenna_like_GSSI_1500_patterns_E.out``. This will produce a Numpy file containing the field pattern data.
-* Plot the field pattern data by running the ``plot_fields.py`` module on the Numpy file, e.g. for the E-plane ``python -m user_libs.antenna_patterns.plot_fields antenna_like_GSSI_1500_patterns_E.npy``
+* Once the simulation has completed, run the ``initial_save.py`` module on the output file, e.g. for the E-plane ``python -m user_libs.antenna_patterns.initial_save user_models/antenna_like_GSSI_1500_patterns_E_Er5.out``. This will produce a Numpy file containing the field pattern data.
+* Plot the field pattern data by running the ``plot_fields.py`` module on the Numpy file, e.g. for the E-plane ``python -m user_libs.antenna_patterns.plot_fields user_models/antenna_like_GSSI_1500_patterns_E_Er5.npy``
 
 .. tip::
 

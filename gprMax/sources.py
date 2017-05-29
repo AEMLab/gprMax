@@ -17,12 +17,14 @@
 # along with gprMax.  If not, see <http://www.gnu.org/licenses/>.
 
 from copy import deepcopy
-import decimal as d
 
 import numpy as np
 
-from gprMax.constants import c, floattype
-from gprMax.grid import Ix, Iy, Iz
+from gprMax.constants import c
+from gprMax.constants import floattype
+from gprMax.grid import Ix
+from gprMax.grid import Iy
+from gprMax.grid import Iz
 from gprMax.utilities import round_value
 
 
@@ -49,11 +51,15 @@ class Source(object):
             G (class): Grid class instance - holds essential parameters describing the model.
         """
 
-        self.waveformvaluesJ = np.zeros((G.iterations + 1), dtype=floattype)
-        self.waveformvaluesM = np.zeros((G.iterations + 1), dtype=floattype)
+        # Waveform values for electric sources - calculated half a timestep later
+        self.waveformvaluesJ = np.zeros((G.iterations), dtype=floattype)
+
+        # Waveform values for magnetic sources
+        self.waveformvaluesM = np.zeros((G.iterations), dtype=floattype)
+
         waveform = next(x for x in G.waveforms if x.ID == self.waveformID)
 
-        for iteration in range(G.iterations + 1):
+        for iteration in range(G.iterations):
             time = G.dt * iteration
             if time >= self.start and time <= self.stop:
                 # Set the time of the waveform evaluation to account for any delay in the start
@@ -63,7 +69,10 @@ class Source(object):
 
 
 class VoltageSource(Source):
-    """A voltage source can be a hard source if it's resistance is zero, i.e. the time variation of the specified electric field component is prescribed. If it's resistance is non-zero it behaves as a resistive voltage source."""
+    """
+    A voltage source can be a hard source if it's resistance is zero, i.e. the
+    time variation of the specified electric field component is prescribed.
+    If it's resistance is non-zero it behaves as a resistive voltage source."""
 
     def __init__(self):
         super().__init__()
@@ -105,7 +114,9 @@ class VoltageSource(Source):
                     Ez[i, j, k] = -1 * self.waveformvaluesJ[iteration] / G.dz
 
     def create_material(self, G):
-        """Create a new material at the voltage source location that adds the voltage source conductivity to the underlying parameters.
+        """
+        Create a new material at the voltage source location that adds the
+        voltage source conductivity to the underlying parameters.
 
         Args:
             G (class): Grid class instance - holds essential parameters describing the model.
@@ -205,7 +216,10 @@ class MagneticDipole(Source):
 
 
 class TransmissionLine(Source):
-    """A transmission line source is a one-dimensional transmission line which is attached virtually to a grid cell."""
+    """
+    A transmission line source is a one-dimensional transmission
+    line which is attached virtually to a grid cell.
+    """
 
     def __init__(self, G):
         """
@@ -220,10 +234,12 @@ class TransmissionLine(Source):
         self.abcv0 = 0
         self.abcv1 = 0
 
-        # Spatial step of transmission line (N.B if the magic time step is used it results in instabilities for certain impedances)
+        # Spatial step of transmission line (N.B if the magic time step is
+        # used it results in instabilities for certain impedances)
         self.dl = np.sqrt(3) * c * G.dt
 
-        # Number of cells in the transmission line (initially a long line to calculate incident voltage and current); consider putting ABCs/PML at end
+        # Number of cells in the transmission line (initially a long line to
+        # calculate incident voltage and current); consider putting ABCs/PML at end
         self.nl = round_value(0.667 * G.iterations)
 
         # Cell position of the one-way injector excitation in the transmission line
@@ -240,7 +256,9 @@ class TransmissionLine(Source):
         self.Itotal = np.zeros(G.iterations, dtype=floattype)
 
     def calculate_incident_V_I(self, G):
-        """Calculates the incident voltage and current with a long length transmission line not connected to the main grid from: http://dx.doi.org/10.1002/mop.10415
+        """
+        Calculates the incident voltage and current with a long length
+        transmission line not connected to the main grid from: http://dx.doi.org/10.1002/mop.10415
 
         Args:
             G (class): Grid class instance - holds essential parameters describing the model.
