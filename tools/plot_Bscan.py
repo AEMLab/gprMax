@@ -66,7 +66,7 @@ def get_output_data(filename, rxnumber, rxcomponent):
     return outputdata, dt
 
 
-def mpl_plot(filename, outputdata, dt, rxnumber, rxcomponent):
+def mpl_plot(filename, outputdata, dt, rxnumber, rxcomponent, colormap):
     """Creates a plot (with matplotlib) of the B-scan.
 
     Args:
@@ -83,7 +83,7 @@ def mpl_plot(filename, outputdata, dt, rxnumber, rxcomponent):
     (path, filename) = os.path.split(filename)
 
     fig = plt.figure(num=filename + ' - rx' + str(rxnumber), figsize=(20, 10), facecolor='w', edgecolor='w')
-    plt.imshow(outputdata, extent=[0, outputdata.shape[1], outputdata.shape[0] * dt, 0], interpolation='nearest', aspect='auto', cmap='seismic', vmin=-np.amax(np.abs(outputdata)), vmax=np.amax(np.abs(outputdata)))
+    plt.imshow(outputdata, extent=[0, outputdata.shape[1], outputdata.shape[0] * dt, 0], interpolation='nearest', aspect='auto', cmap=colormap, vmin=-np.amax(np.abs(outputdata)), vmax=np.amax(np.abs(outputdata)))
     plt.xlabel('Trace number')
     plt.ylabel('Time [s]')
     # plt.title('{}'.format(filename))
@@ -107,9 +107,10 @@ def mpl_plot(filename, outputdata, dt, rxnumber, rxcomponent):
 if __name__ == "__main__":
 
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Plots a B-scan image.', usage='cd gprMax; python -m tools.plot_Bscan outputfile output')
+    parser = argparse.ArgumentParser(description='Plots a B-scan image.', usage='cd gprMax; python -m tools.plot_Bscan outputfile output colormap')
     parser.add_argument('outputfile', help='name of output file including path')
     parser.add_argument('rx_component', help='name of output component to be plotted', choices=['Ex', 'Ey', 'Ez', 'Hx', 'Hy', 'Hz', 'Ix', 'Iy', 'Iz'])
+    parser.add_argument('colormap', help='colormap used in plot', nargs='?', default='seismic')
     args = parser.parse_args()
 
     # Open output file and read number of outputs (receivers)
@@ -123,6 +124,6 @@ if __name__ == "__main__":
 
     for rx in range(1, nrx + 1):
         outputdata, dt = get_output_data(args.outputfile, rx, args.rx_component)
-        plthandle = mpl_plot(args.outputfile, outputdata, dt, rx, args.rx_component)
+        plthandle = mpl_plot(args.outputfile, outputdata, dt, rx, args.rx_component, args.colormap)
 
     plthandle.show()
