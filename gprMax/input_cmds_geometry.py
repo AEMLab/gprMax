@@ -876,7 +876,7 @@ def process_geometrycmds(geometry, G):
             volume.operatingonID = tmp[12]
             volume.nbins = nbins
             volume.seed = seed
-            volume.weighting = (float(tmp[8]), float(tmp[9]), float(tmp[10]))
+            volume.weighting = np.array([float(tmp[8]), float(tmp[9]), float(tmp[10])])
             try:
                 volume.averaging = averagefractalbox
             except:
@@ -995,14 +995,14 @@ def process_geometrycmds(geometry, G):
                         surface.fractalrange = fractalrange
                         surface.operatingonID = volume.ID
                         surface.seed = seed
-                        surface.weighting = (float(tmp[8]), float(tmp[9]))
+                        surface.weighting = np.array([float(tmp[8]), float(tmp[9])])
 
                         # List of existing surfaces IDs
                         existingsurfaceIDs = [x.surfaceID for x in volume.fractalsurfaces]
                         if surface.surfaceID in existingsurfaceIDs:
                             raise CmdInputError("'" + ' '.join(tmp) + "'" + ' has already been used on the {} surface'.format(surface.surfaceID))
 
-                        surface.generate_fractal_surface()
+                        surface.generate_fractal_surface(G)
                         volume.fractalsurfaces.append(surface)
 
                         if G.messages:
@@ -1212,7 +1212,7 @@ def process_geometrycmds(geometry, G):
                         # Set the fractal range to scale the fractal distribution between zero and one
                         surface.fractalrange = (0, 1)
                         surface.operatingonID = volume.ID
-                        surface.generate_fractal_surface()
+                        surface.generate_fractal_surface(G)
                         if numblades > surface.fractalsurface.shape[0] * surface.fractalsurface.shape[1]:
                             raise CmdInputError("'" + ' '.join(tmp) + "'" + ' the specified surface is not large enough for the number of grass blades/roots specified')
 
@@ -1308,7 +1308,7 @@ def process_geometrycmds(geometry, G):
                     materialnumID = next(x.numID for x in G.materials if x.ID == volume.operatingonID)
                     volume.fractalvolume *= materialnumID
                 else:
-                    volume.generate_fractal_volume()
+                    volume.generate_fractal_volume(G)
                     volume.fractalvolume += mixingmodel.startmaterialnum
 
                 volume.generate_volume_mask()
@@ -1345,33 +1345,33 @@ def process_geometrycmds(geometry, G):
                                 for k in range(surface.zs, surface.zf):
                                     if surface.fractalsurface[j - surface.ys, k - surface.zs] > 0:
                                         height = 0
-                                        blade += 1
                                         for i in range(volume.xs, surface.fractalrange[1]):
                                             if i < surface.fractalsurface[j - surface.ys, k - surface.zs] and volume.mask[i - volume.xs, j - volume.ys, k - volume.zs] != 1:
-                                                y, z = g.calculate_blade_geometry(blade - 1, height)
+                                                y, z = g.calculate_blade_geometry(blade, height)
                                                 # Add y, z coordinates to existing location
-                                                yy = j - volume.ys + y
-                                                zz = k - volume.zs + z
+                                                yy = int(j - volume.ys + y)
+                                                zz = int(k - volume.zs + z)
                                                 # If these coordinates are outwith fractal volume stop building the blade, otherwise set the mask for grass
                                                 if yy < 0 or yy >= volume.mask.shape[1] or zz < 0 or zz >= volume.mask.shape[2]:
                                                     break
                                                 else:
                                                     volume.mask[i - volume.xs, yy, zz] = 3
                                                     height += 1
+                                        blade += 1
+
                             # Build the roots of the grass
-                            blade = 0
+                            root = 0
                             for j in range(surface.ys, surface.yf):
                                 for k in range(surface.zs, surface.zf):
                                     if surface.fractalsurface[j - surface.ys, k - surface.zs] > 0:
                                         depth = 0
-                                        blade += 1
-                                        i = volume.xf
+                                        i = volume.xf - 1
                                         while i > volume.xs:
                                             if i > volume.originalxf - (surface.fractalsurface[j - surface.ys, k - surface.zs] - volume.originalxf) and volume.mask[i - volume.xs, j - volume.ys, k - volume.zs] == 1:
-                                                y, z = g.calculate_root_geometry(blade - 1, depth)
+                                                y, z = g.calculate_root_geometry(root, depth)
                                                 # Add y, z coordinates to existing location
-                                                yy = j - volume.ys + y
-                                                zz = k - volume.zs + z
+                                                yy = int(j - volume.ys + y)
+                                                zz = int(k - volume.zs + z)
                                                 # If these coordinates are outwith the fractal volume stop building the root, otherwise set the mask for grass
                                                 if yy < 0 or yy >= volume.mask.shape[1] or zz < 0 or zz >= volume.mask.shape[2]:
                                                     break
@@ -1379,6 +1379,7 @@ def process_geometrycmds(geometry, G):
                                                     volume.mask[i - volume.xs, yy, zz] = 3
                                                     depth += 1
                                             i -= 1
+                                        root += 1
 
                     elif surface.surfaceID == 'yminus':
                         for i in range(surface.xs, surface.xf):
@@ -1410,33 +1411,33 @@ def process_geometrycmds(geometry, G):
                                 for k in range(surface.zs, surface.zf):
                                     if surface.fractalsurface[i - surface.xs, k - surface.zs] > 0:
                                         height = 0
-                                        blade += 1
                                         for j in range(volume.ys, surface.fractalrange[1]):
                                             if j < surface.fractalsurface[i - surface.xs, k - surface.zs] and volume.mask[i - volume.xs, j - volume.ys, k - volume.zs] != 1:
-                                                x, z = g.calculate_blade_geometry(blade - 1, height)
+                                                x, z = g.calculate_blade_geometry(blade, height)
                                                 # Add x, z coordinates to existing location
-                                                xx = i - volume.xs + x
-                                                zz = k - volume.zs + z
+                                                xx = int(i - volume.xs + x)
+                                                zz = int(k - volume.zs + z)
                                                 # If these coordinates are outwith fractal volume stop building the blade, otherwise set the mask for grass
                                                 if xx < 0 or xx >= volume.mask.shape[0] or zz < 0 or zz >= volume.mask.shape[2]:
                                                     break
                                                 else:
                                                     volume.mask[xx, j - volume.ys, zz] = 3
                                                     height += 1
+                                        blade += 1
+
                             # Build the roots of the grass
-                            blade = 0
+                            root = 0
                             for i in range(surface.xs, surface.xf):
                                 for k in range(surface.zs, surface.zf):
                                     if surface.fractalsurface[i - surface.xs, k - surface.zs] > 0:
                                         depth = 0
-                                        blade += 1
-                                        j = volume.yf
+                                        j = volume.yf - 1
                                         while j > volume.ys:
                                             if j > volume.originalyf - (surface.fractalsurface[i - surface.xs, k - surface.zs] - volume.originalyf) and volume.mask[i - volume.xs, j - volume.ys, k - volume.zs] == 1:
-                                                x, z = g.calculate_root_geometry(blade - 1, depth)
+                                                x, z = g.calculate_root_geometry(root, depth)
                                                 # Add x, z coordinates to existing location
-                                                xx = i - volume.xs + x
-                                                zz = k - volume.zs + z
+                                                xx = int(i - volume.xs + x)
+                                                zz = int(k - volume.zs + z)
                                                 # If these coordinates are outwith the fractal volume stop building the root, otherwise set the mask for grass
                                                 if xx < 0 or xx >= volume.mask.shape[0] or zz < 0 or zz >= volume.mask.shape[2]:
                                                     break
@@ -1444,6 +1445,7 @@ def process_geometrycmds(geometry, G):
                                                     volume.mask[xx, j - volume.ys, zz] = 3
                                                     depth += 1
                                             j -= 1
+                                        root += 1
 
                     elif surface.surfaceID == 'zminus':
                         for i in range(surface.xs, surface.xf):
@@ -1475,33 +1477,33 @@ def process_geometrycmds(geometry, G):
                                 for j in range(surface.ys, surface.yf):
                                     if surface.fractalsurface[i - surface.xs, j - surface.ys] > 0:
                                         height = 0
-                                        blade += 1
                                         for k in range(volume.zs, surface.fractalrange[1]):
                                             if k < surface.fractalsurface[i - surface.xs, j - surface.ys] and volume.mask[i - volume.xs, j - volume.ys, k - volume.zs] != 1:
-                                                x, y = g.calculate_blade_geometry(blade - 1, height)
+                                                x, y = g.calculate_blade_geometry(blade, height)
                                                 # Add x, y coordinates to existing location
-                                                xx = i - volume.xs + x
-                                                yy = j - volume.ys + y
+                                                xx = int(i - volume.xs + x)
+                                                yy = int(j - volume.ys + y)
                                                 # If these coordinates are outwith the fractal volume stop building the blade, otherwise set the mask for grass
                                                 if xx < 0 or xx >= volume.mask.shape[0] or yy < 0 or yy >= volume.mask.shape[1]:
                                                     break
                                                 else:
                                                     volume.mask[xx, yy, k - volume.zs] = 3
                                                     height += 1
+                                        blade += 1
+
                             # Build the roots of the grass
-                            blade = 0
+                            root = 0
                             for i in range(surface.xs, surface.xf):
                                 for j in range(surface.ys, surface.yf):
                                     if surface.fractalsurface[i - surface.xs, j - surface.ys] > 0:
                                         depth = 0
-                                        blade += 1
-                                        k = volume.zf
+                                        k = volume.zf - 1
                                         while k > volume.zs:
                                             if k > volume.originalzf - (surface.fractalsurface[i - surface.xs, j - surface.ys] - volume.originalzf) and volume.mask[i - volume.xs, j - volume.ys, k - volume.zs] == 1:
-                                                x, y = g.calculate_root_geometry(blade - 1, depth)
+                                                x, y = g.calculate_root_geometry(root, depth)
                                                 # Add x, y coordinates to existing location
-                                                xx = i - volume.xs + x
-                                                yy = j - volume.ys + y
+                                                xx = int(i - volume.xs + x)
+                                                yy = int(j - volume.ys + y)
                                                 # If these coordinates are outwith the fractal volume stop building the root, otherwise set the mask for grass
                                                 if xx < 0 or xx >= volume.mask.shape[0] or yy < 0 or yy >= volume.mask.shape[1]:
                                                     break
@@ -1509,6 +1511,7 @@ def process_geometrycmds(geometry, G):
                                                     volume.mask[xx, yy, k - volume.zs] = 3
                                                     depth += 1
                                             k -= 1
+                                        root += 1
 
                 # Build voxels from any true values of the 3D mask array
                 waternumID = next((x.numID for x in G.materials if x.ID == 'water'), 0)
@@ -1521,7 +1524,7 @@ def process_geometrycmds(geometry, G):
                 if volume.nbins == 1:
                     raise CmdInputError("'" + ' '.join(tmp) + "'" + ' is being used with a single material and no modifications, therefore please use a #box command instead.')
                 else:
-                    volume.generate_fractal_volume()
+                    volume.generate_fractal_volume(G)
                     volume.fractalvolume += mixingmodel.startmaterialnum
 
                 data = volume.fractalvolume.astype('int16', order='C')

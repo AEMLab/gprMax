@@ -87,8 +87,18 @@ class FDTDGrid(Grid):
         self.messages = True
         self.tqdmdisable = False
 
+        # Get information about host machine
+        self.hostinfo = None
+
         # CPU - OpenMP threads
         self.nthreads = 0
+
+        # GPU
+        # Threads per block
+        self.tpb = (256, 1, 1)
+
+        # GPU object
+        self.gpu = None
 
         # Threshold (dB) down from maximum power (0dB) of main frequency used
         # to calculate highest frequency for numerical dispersion analysis
@@ -168,6 +178,33 @@ class FDTDGrid(Grid):
         self.Tz = np.zeros((Material.maxpoles, self.nx + 1, self.ny + 1, self.nz + 1), dtype=complextype)
         self.updatecoeffsdispersive = np.zeros((len(self.materials), 3 * Material.maxpoles), dtype=complextype)
 
+    def gpu_set_blocks_per_grid(self):
+        """Set the blocks per grid size used for updating the electric and magnetic field arrays on a GPU."""
+        self.bpg = (int(np.ceil(((self.nx + 1) * (self.ny + 1) * (self.nz + 1)) / self.tpb[0])), 1, 1)
+
+    def gpu_initialise_arrays(self):
+        """Initialise standard field arrays on GPU."""
+
+        import pycuda.gpuarray as gpuarray
+
+        self.ID_gpu = gpuarray.to_gpu(self.ID)
+        self.Ex_gpu = gpuarray.to_gpu(self.Ex)
+        self.Ey_gpu = gpuarray.to_gpu(self.Ey)
+        self.Ez_gpu = gpuarray.to_gpu(self.Ez)
+        self.Hx_gpu = gpuarray.to_gpu(self.Hx)
+        self.Hy_gpu = gpuarray.to_gpu(self.Hy)
+        self.Hz_gpu = gpuarray.to_gpu(self.Hz)
+
+    def gpu_initialise_dispersive_arrays(self):
+        """Initialise dispersive material coefficient arrays on GPU."""
+
+        import pycuda.gpuarray as gpuarray
+
+        self.Tx_gpu = gpuarray.to_gpu(self.Tx)
+        self.Ty_gpu = gpuarray.to_gpu(self.Ty)
+        self.Tz_gpu = gpuarray.to_gpu(self.Tz)
+        self.updatecoeffsdispersive_gpu = gpuarray.to_gpu(self.updatecoeffsdispersive)
+
 
 def dispersion_analysis(G):
     """
@@ -201,8 +238,10 @@ def dispersion_analysis(G):
 
                 # Built-in waveform
                 else:
-                    time = np.linspace(0, 1, G.iterations)
-                    time *= (G.iterations * G.dt)
+                    # Time to analyse waveform - 4*pulse_width as using entire
+                    # time window can result in demanding FFT
+                    waveform.calculate_coefficients()
+                    time = np.arange(0, 4 * waveform.chi, G.dt)
                     waveformvalues = np.zeros(len(time))
                     timeiter = np.nditer(time, flags=['c_index'])
 
