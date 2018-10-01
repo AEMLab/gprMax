@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2017: The University of Edinburgh
+# Copyright (C) 2015-2018: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -20,12 +20,12 @@ import numpy as np
 cimport numpy as np
 
 from gprMax.materials import Material
-from gprMax.yee_cell_setget_rigid cimport get_rigid_Ex
-from gprMax.yee_cell_setget_rigid cimport get_rigid_Ey
-from gprMax.yee_cell_setget_rigid cimport get_rigid_Ez
-from gprMax.yee_cell_setget_rigid cimport get_rigid_Hx
-from gprMax.yee_cell_setget_rigid cimport get_rigid_Hy
-from gprMax.yee_cell_setget_rigid cimport get_rigid_Hz
+from gprMax.yee_cell_setget_rigid_ext cimport get_rigid_Ex
+from gprMax.yee_cell_setget_rigid_ext cimport get_rigid_Ey
+from gprMax.yee_cell_setget_rigid_ext cimport get_rigid_Ez
+from gprMax.yee_cell_setget_rigid_ext cimport get_rigid_Hx
+from gprMax.yee_cell_setget_rigid_ext cimport get_rigid_Hy
+from gprMax.yee_cell_setget_rigid_ext cimport get_rigid_Hz
 
 
 cpdef void create_electric_average(int i, int j, int k, int numID1, int numID2, int numID3, int numID4, int componentID, G):

@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2017: The University of Edinburgh
+# Copyright (C) 2015-2018: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -28,8 +28,11 @@ np.seterr(invalid='raise')
 from gprMax.constants import c
 from gprMax.constants import floattype
 from gprMax.constants import complextype
+from gprMax.exceptions import GeneralError
 from gprMax.materials import Material
 from gprMax.pml import PML
+from gprMax.utilities import fft_power
+from gprMax.utilities import human_size
 from gprMax.utilities import round_value
 
 
@@ -49,10 +52,10 @@ class Grid(object):
         self.grid = grid
 
     def n_edges(self):
-        l = self.nx
-        m = self.ny
-        n = self.nz
-        e = (l * m * (n - 1)) + (m * n * (l - 1)) + (l * n * (m - 1))
+        i = self.nx
+        j = self.ny
+        k = self.nz
+        e = (i * j * (k - 1)) + (j * k * (i - 1)) + (i * k * (j - 1))
         return e
 
     def n_nodes(self):
@@ -83,9 +86,11 @@ class FDTDGrid(Grid):
     def __init__(self):
         self.inputfilename = ''
         self.inputdirectory = ''
+        self.outputdirectory = ''
         self.title = ''
         self.messages = True
         self.tqdmdisable = False
+        self.memoryusage = 0
 
         # Get information about host machine
         self.hostinfo = None
@@ -94,11 +99,16 @@ class FDTDGrid(Grid):
         self.nthreads = 0
 
         # GPU
-        # Threads per block
+        # Threads per block - electric and magnetic field updates
         self.tpb = (256, 1, 1)
 
         # GPU object
         self.gpu = None
+
+        # Copy snapshot data from GPU to CPU during simulation
+        # N.B. This will happen if the requested snapshots are too large to fit
+        # on the memory of the GPU. If True this will slow performance significantly
+        self.snapsgpu2cpu = False
 
         # Threshold (dB) down from maximum power (0dB) of main frequency used
         # to calculate highest frequency for numerical dispersion analysis
@@ -115,7 +125,7 @@ class FDTDGrid(Grid):
         self.dy = 0
         self.dz = 0
         self.dt = 0
-        self.dimension = None
+        self.mode = None
         self.iterations = 0
         self.timewindow = 0
 
@@ -178,6 +188,60 @@ class FDTDGrid(Grid):
         self.Tz = np.zeros((Material.maxpoles, self.nx + 1, self.ny + 1, self.nz + 1), dtype=complextype)
         self.updatecoeffsdispersive = np.zeros((len(self.materials), 3 * Material.maxpoles), dtype=complextype)
 
+    def memory_estimate_basic(self):
+        """Estimate the amount of memory (RAM) required to run a model."""
+
+        stdoverhead = 45e6
+
+        # 6 x field arrays + 6 x ID arrays
+        fieldarrays = (6 + 6) * (self.nx + 1) * (self.ny + 1) * (self.nz + 1) * np.dtype(floattype).itemsize
+
+        solidarray = self.nx * self.ny * self.nz * np.dtype(np.uint32).itemsize
+
+        # 12 x rigidE array components + 6 x rigidH array components
+        rigidarrays = (12 + 6) * self.nx * self.ny * self.nz * np.dtype(np.int8).itemsize
+
+        # PML arrays
+        pmlarrays = 0
+        for (k, v) in self.pmlthickness.items():
+            if v > 0:
+                if 'x' in k:
+                    pmlarrays += ((v + 1) * self.ny * (self.nz + 1))
+                    pmlarrays += ((v + 1) * (self.ny + 1) * self.nz)
+                    pmlarrays += (v * self.ny * (self.nz + 1))
+                    pmlarrays += (v * (self.ny + 1) * self.nz)
+                elif 'y' in k:
+                    pmlarrays += (self.nx * (v + 1) * (self.nz + 1))
+                    pmlarrays += ((self.nx + 1) * (v + 1) * self.nz)
+                    pmlarrays += ((self.nx + 1) * v * self.nz)
+                    pmlarrays += (self.nx * v * (self.nz + 1))
+                elif 'z' in k:
+                    pmlarrays += (self.nx * (self.ny + 1) * (v + 1))
+                    pmlarrays += ((self.nx + 1) * self.ny * (v + 1))
+                    pmlarrays += ((self.nx + 1) * self.ny * v)
+                    pmlarrays += (self.nx * (self.ny + 1) * v)
+
+        self.memoryusage = int(stdoverhead + fieldarrays + solidarray + rigidarrays + pmlarrays)
+
+    def memory_check(self, snapsmemsize=0):
+        """Check the required amount of memory (RAM) is available on the host and GPU if specified.
+
+        Args:
+            snapsmemsize (int): amount of memory (bytes) required to store all requested snapshots
+        """
+
+        # Check if model can be built and/or run on host
+        if self.memoryusage > self.hostinfo['ram']:
+            raise GeneralError('Memory (RAM) required ~{} exceeds {} detected!\n'.format(human_size(self.memoryusage), human_size(self.hostinfo['ram'], a_kilobyte_is_1024_bytes=True)))
+
+        # Check if model can be run on specified GPU if required
+        if self.gpu is not None:
+            if self.memoryusage > self.gpu.totalmem:
+                if snapsmemsize != 0:
+                    self.snapsgpu2cpu = True
+                else:
+                    raise GeneralError('Memory (RAM) required ~{} exceeds {} detected on specified {} - {} GPU!\n'.format(human_size(self.memoryusage), human_size(self.gpu.totalmem, a_kilobyte_is_1024_bytes=True), self.gpu.deviceID, self.gpu.name))
+
     def gpu_set_blocks_per_grid(self):
         """Set the blocks per grid size used for updating the electric and magnetic field arrays on a GPU."""
         self.bpg = (int(np.ceil(((self.nx + 1) * (self.ny + 1) * (self.nz + 1)) / self.tpb[0])), 1, 1)
@@ -219,8 +283,8 @@ def dispersion_analysis(G):
     """
 
     # Physical phase velocity error (percentage); grid sampling density;
-    # material with maximum permittivity; maximum significant frequency
-    results = {'deltavp': False, 'N': False, 'waveform': True, 'material': False, 'maxfreq': []}
+    # material with maximum permittivity; maximum significant frequency; error message
+    results = {'deltavp': False, 'N': False, 'material': False, 'maxfreq': [], 'error': ''}
 
     # Find maximum significant frequency
     if G.waveforms:
@@ -229,47 +293,45 @@ def dispersion_analysis(G):
                 results['maxfreq'].append(4 * waveform.freq)
 
             elif waveform.type == 'impulse':
-                pass
+                results['error'] = 'impulse waveform used.'
 
             else:
                 # User-defined waveform
                 if waveform.type == 'user':
-                    waveformvalues = waveform.uservalues
+                    iterations = G.iterations
 
                 # Built-in waveform
                 else:
                     # Time to analyse waveform - 4*pulse_width as using entire
                     # time window can result in demanding FFT
                     waveform.calculate_coefficients()
-                    time = np.arange(0, 4 * waveform.chi, G.dt)
-                    waveformvalues = np.zeros(len(time))
-                    timeiter = np.nditer(time, flags=['c_index'])
+                    iterations = round_value(4 * waveform.chi / G.dt)
+                    if iterations > G.iterations:
+                        iterations = G.iterations
 
-                    while not timeiter.finished:
-                        waveformvalues[timeiter.index] = waveform.calculate_value(timeiter[0], G.dt)
-                        timeiter.iternext()
+                waveformvalues = np.zeros(G.iterations)
+                for iteration in range(G.iterations):
+                    waveformvalues[iteration] = waveform.calculate_value(iteration * G.dt, G.dt)
 
                 # Ensure source waveform is not being overly truncated before attempting any FFT
                 if np.abs(waveformvalues[-1]) < np.abs(np.amax(waveformvalues)) / 100:
-                    # Calculate magnitude of frequency spectra of waveform
-                    power = 10 * np.log10(np.abs(np.fft.fft(waveformvalues))**2)
-                    freqs = np.fft.fftfreq(power.size, d=G.dt)
-
-                    # Shift powers so that frequency with maximum power is at zero decibels
-                    power -= np.amax(power)
-
+                    # FFT
+                    freqs, power = fft_power(waveformvalues, G.dt)
                     # Get frequency for max power
-                    freqmaxpower = np.where(np.isclose(power[1::], np.amax(power[1::])))[0][0]
+                    freqmaxpower = np.where(np.isclose(power, 0))[0][0]
 
                     # Set maximum frequency to a threshold drop from maximum power, ignoring DC value
-                    freq = np.where((np.amax(power[freqmaxpower::]) - power[freqmaxpower::]) > G.highestfreqthres)[0][0] + 1
-                    results['maxfreq'].append(freqs[freq])
+                    try:
+                        freqthres = np.where(power[freqmaxpower:] < -G.highestfreqthres)[0][0] + freqmaxpower
+                        results['maxfreq'].append(freqs[freqthres])
+                    except ValueError:
+                        results['error'] = 'unable to calculate maximum power from waveform, most likely due to undersampling.'
 
                 # If waveform is truncated don't do any further analysis
                 else:
-                    results['waveform'] = False
+                    results['error'] = 'waveform does not fit within specified time window and is therefore being truncated.'
     else:
-        results['waveform'] = False
+        results['error'] = 'no waveform detected.'
 
     if results['maxfreq']:
         results['maxfreq'] = max(results['maxfreq'])
@@ -297,9 +359,9 @@ def dispersion_analysis(G):
         minwavelength = minvelocity / results['maxfreq']
 
         # Maximum spatial step
-        if G.dimension == '3D':
+        if '3D' in G.mode:
             delta = max(G.dx, G.dy, G.dz)
-        elif G.dimension == '2D':
+        elif '2D' in G.mode:
             if G.nx == 1:
                 delta = max(G.dy, G.dz)
             elif G.ny == 1:

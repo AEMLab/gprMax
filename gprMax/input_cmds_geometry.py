@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2017: The University of Edinburgh
+# Copyright (C) 2015-2018: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -30,19 +30,19 @@ from gprMax.exceptions import CmdInputError
 from gprMax.fractals import FractalSurface
 from gprMax.fractals import FractalVolume
 from gprMax.fractals import Grass
-from gprMax.geometry_primitives import build_edge_x
-from gprMax.geometry_primitives import build_edge_y
-from gprMax.geometry_primitives import build_edge_z
-from gprMax.geometry_primitives import build_face_yz
-from gprMax.geometry_primitives import build_face_xz
-from gprMax.geometry_primitives import build_face_xy
-from gprMax.geometry_primitives import build_triangle
-from gprMax.geometry_primitives import build_box
-from gprMax.geometry_primitives import build_cylinder
-from gprMax.geometry_primitives import build_cylindrical_sector
-from gprMax.geometry_primitives import build_sphere
-from gprMax.geometry_primitives import build_voxels_from_array
-from gprMax.geometry_primitives import build_voxels_from_array_mask
+from gprMax.geometry_primitives_ext import build_edge_x
+from gprMax.geometry_primitives_ext import build_edge_y
+from gprMax.geometry_primitives_ext import build_edge_z
+from gprMax.geometry_primitives_ext import build_face_yz
+from gprMax.geometry_primitives_ext import build_face_xz
+from gprMax.geometry_primitives_ext import build_face_xy
+from gprMax.geometry_primitives_ext import build_triangle
+from gprMax.geometry_primitives_ext import build_box
+from gprMax.geometry_primitives_ext import build_cylinder
+from gprMax.geometry_primitives_ext import build_cylindrical_sector
+from gprMax.geometry_primitives_ext import build_sphere
+from gprMax.geometry_primitives_ext import build_voxels_from_array
+from gprMax.geometry_primitives_ext import build_voxels_from_array_mask
 from gprMax.materials import Material
 from gprMax.utilities import round_value
 from gprMax.utilities import get_terminal_width
@@ -110,7 +110,7 @@ def process_geometrycmds(geometry, G):
 
             # Open geometry object file and read/check spatial resolution attribute
             f = h5py.File(geofile, 'r')
-            dx_dy_dz = f.attrs['dx, dy, dz']
+            dx_dy_dz = f.attrs['dx_dy_dz']
             if round_value(dx_dy_dz[0] / G.dx) != 1 or round_value(dx_dy_dz[1] / G.dy) != 1 or round_value(dx_dy_dz[2] / G.dz) != 1:
                 raise CmdInputError("'" + ' '.join(tmp) + "'" + ' requires the spatial resolution of the geometry objects file to match the spatial resolution of the model')
 
@@ -637,16 +637,10 @@ def process_geometrycmds(geometry, G):
 
             if normal != 'x' and normal != 'y' and normal != 'z':
                 raise CmdInputError("'" + ' '.join(tmp) + "'" + ' the normal direction must be either x, y or z.')
-            if ctr1 < 0 or ctr2 < 0:
-                raise CmdInputError("'" + ' '.join(tmp) + "'" + ' the coordinates of the centre of the circle are not within the model domain.')
-            if normal == 'x' and (ctr1 > G.ny or ctr1 > G.nz or ctr2 > G.ny or ctr2 > G.nz):
-                raise CmdInputError("'" + ' '.join(tmp) + "'" + ' the coordinates of the centre of the circle are not within the model domain.')
-            elif normal == 'y' and (ctr1 > G.nx or ctr1 > G.nz or ctr2 > G.nx or ctr2 > G.nz):
-                raise CmdInputError("'" + ' '.join(tmp) + "'" + ' the coordinates of the centre of the circle are not within the model domain.')
-            elif normal == 'z' and (ctr1 > G.nx or ctr1 > G.ny or ctr2 > G.nx or ctr2 > G.ny):
-                raise CmdInputError("'" + ' '.join(tmp) + "'" + ' the coordinates of the centre of the circle are not within the model domain.')
             if r <= 0:
                 raise CmdInputError("'" + ' '.join(tmp) + "'" + ' the radius {:g} should be a positive value.'.format(r))
+            if sectorstartangle < 0 or sectorangle <= 0:
+                raise CmdInputError("'" + ' '.join(tmp) + "'" + ' the starting angle and sector angle should be a positive values.')
             if sectorstartangle >= 2 * np.pi or sectorangle >= 2 * np.pi:
                 raise CmdInputError("'" + ' '.join(tmp) + "'" + ' the starting angle and sector angle must be less than 360 degrees.')
 
@@ -877,10 +871,7 @@ def process_geometrycmds(geometry, G):
             volume.nbins = nbins
             volume.seed = seed
             volume.weighting = np.array([float(tmp[8]), float(tmp[9]), float(tmp[10])])
-            try:
-                volume.averaging = averagefractalbox
-            except:
-                pass
+            volume.averaging = averagefractalbox
 
             if G.messages:
                 if volume.averaging:
@@ -944,13 +935,13 @@ def process_geometrycmds(geometry, G):
                             fractalrange = (round_value(float(tmp[10]) / G.dx), round_value(float(tmp[11]) / G.dx))
                             # xminus surface
                             if xs == volume.xs:
-                                if fractalrange[0] < 0:
-                                    raise CmdInputError("'" + ' '.join(tmp) + "'" + ' cannot apply fractal surface to fractal box as it would exceed the domain size in the x direction')
+                                if fractalrange[0] < 0 or fractalrange[1] > volume.xf:
+                                    raise CmdInputError("'" + ' '.join(tmp) + "'" + ' cannot apply fractal surface to fractal box as it would exceed either the upper coordinates of the fractal box or the domain in the x direction')
                                 requestedsurface = 'xminus'
                             # xplus surface
                             elif xf == volume.xf:
-                                if fractalrange[1] > G.nx:
-                                    raise CmdInputError("'" + ' '.join(tmp) + "'" + ' cannot apply fractal surface to fractal box as it would exceed the domain size in the x direction')
+                                if fractalrange[0] < volume.xs or fractalrange[1] > G.nx:
+                                    raise CmdInputError("'" + ' '.join(tmp) + "'" + ' cannot apply fractal surface to fractal box as it would exceed either the lower coordinates of the fractal box or the domain in the x direction')
                                 requestedsurface = 'xplus'
 
                         elif ys == yf:
@@ -961,13 +952,13 @@ def process_geometrycmds(geometry, G):
                             fractalrange = (round_value(float(tmp[10]) / G.dy), round_value(float(tmp[11]) / G.dy))
                             # yminus surface
                             if ys == volume.ys:
-                                if fractalrange[0] < 0:
-                                    raise CmdInputError("'" + ' '.join(tmp) + "'" + ' cannot apply fractal surface to fractal box as it would exceed the domain size in the y direction')
+                                if fractalrange[0] < 0 or fractalrange[1] > volume.yf:
+                                    raise CmdInputError("'" + ' '.join(tmp) + "'" + ' cannot apply fractal surface to fractal box as it would exceed either the upper coordinates of the fractal box or the domain in the y direction')
                                 requestedsurface = 'yminus'
                             # yplus surface
                             elif yf == volume.yf:
-                                if fractalrange[1] > G.ny:
-                                    raise CmdInputError("'" + ' '.join(tmp) + "'" + ' cannot apply fractal surface to fractal box as it would exceed the domain size in the y direction')
+                                if fractalrange[0] < volume.ys or fractalrange[1] > G.ny:
+                                    raise CmdInputError("'" + ' '.join(tmp) + "'" + ' cannot apply fractal surface to fractal box as it would exceed either the lower coordinates of the fractal box or the domain in the y direction')
                                 requestedsurface = 'yplus'
 
                         elif zs == zf:
@@ -978,13 +969,13 @@ def process_geometrycmds(geometry, G):
                             fractalrange = (round_value(float(tmp[10]) / G.dz), round_value(float(tmp[11]) / G.dz))
                             # zminus surface
                             if zs == volume.zs:
-                                if fractalrange[0] < 0:
-                                    raise CmdInputError("'" + ' '.join(tmp) + "'" + ' cannot apply fractal surface to fractal box as it would exceed the domain size in the z direction')
+                                if fractalrange[0] < 0 or fractalrange[1] > volume.zf:
+                                    raise CmdInputError("'" + ' '.join(tmp) + "'" + ' cannot apply fractal surface to fractal box as it would exceed either the upper coordinates of the fractal box or the domain in the x direction')
                                 requestedsurface = 'zminus'
                             # zplus surface
                             elif zf == volume.zf:
-                                if fractalrange[1] > G.nz:
-                                    raise CmdInputError("'" + ' '.join(tmp) + "'" + ' cannot apply fractal surface to fractal box as it would exceed the domain size in the z direction')
+                                if fractalrange[0] < volume.zs or fractalrange[1] > G.nz:
+                                    raise CmdInputError("'" + ' '.join(tmp) + "'" + ' cannot apply fractal surface to fractal box as it would exceed either the lower coordinates of the fractal box or the domain in the z direction')
                                 requestedsurface = 'zplus'
 
                         else:

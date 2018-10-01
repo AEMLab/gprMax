@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2017: The University of Edinburgh
+# Copyright (C) 2015-2018: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -67,7 +67,7 @@ __global__ void store_outputs(int NRX, int iteration, const int* __restrict__ rx
     //      NRX: Total number of receivers in the model
     //      rxs: Array to store field components for receivers - rows are field components; columns are iterations; pages are receivers
     //      E, H: Access to field component arrays
-    
+
     // Obtain the linear index corresponding to the current thread and use for each receiver
     int rx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -102,8 +102,8 @@ def write_hdf5_outputfile(outputfile, Ex, Ey, Ez, Hx, Hy, Hz, G):
     f.attrs['gprMax'] = __version__
     f.attrs['Title'] = G.title
     f.attrs['Iterations'] = G.iterations
-    f.attrs['nx, ny, nz'] = (G.nx, G.ny, G.nz)
-    f.attrs['dx, dy, dz'] = (G.dx, G.dy, G.dz)
+    f.attrs['nx_ny_nz'] = (G.nx, G.ny, G.nz)
+    f.attrs['dx_dy_dz'] = (G.dx, G.dy, G.dz)
     f.attrs['dt'] = G.dt
     nsrc = len(G.voltagesources + G.hertziandipoles + G.magneticdipoles + G.transmissionlines)
     f.attrs['nsrc'] = nsrc

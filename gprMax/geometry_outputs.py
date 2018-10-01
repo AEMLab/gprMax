@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2017: The University of Edinburgh
+# Copyright (C) 2015-2018: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -24,6 +24,8 @@ import numpy as np
 from struct import pack
 
 from gprMax._version import __version__
+from gprMax.geometry_outputs_ext import define_normal_geometry
+from gprMax.geometry_outputs_ext import define_fine_geometry
 from gprMax.utilities import round_value
 
 
@@ -68,20 +70,39 @@ class GeometryView(object):
             self.vtk_yfcells = round_value(self.yf / self.dy)
             self.vtk_zscells = round_value(self.zs / self.dz)
             self.vtk_zfcells = round_value(self.zf / self.dz)
-            self.vtk_nxcells = self.vtk_xfcells - self.vtk_xscells
-            self.vtk_nycells = self.vtk_yfcells - self.vtk_yscells
-            self.vtk_nzcells = self.vtk_zfcells - self.vtk_zscells
-            self.datawritesize = int(np.dtype(np.uint32).itemsize * self.vtk_nxcells * self.vtk_nycells * self.vtk_nzcells) + 2 * (int(np.dtype(np.int8).itemsize * self.vtk_nxcells * self.vtk_nycells * self.vtk_nzcells))
+            self.vtk_nxcells = round_value(self.nx / self.dx)
+            self.vtk_nycells = round_value(self.ny / self.dy)
+            self.vtk_nzcells = round_value(self.nz / self.dz)
+            self.vtk_ncells = self.vtk_nxcells * self.vtk_nycells * self.vtk_nzcells
+            self.datawritesize = (np.dtype(np.uint32).itemsize * self.vtk_ncells +
+                                  2 * np.dtype(np.int8).itemsize * self.vtk_ncells +
+                                  3 * np.dtype(np.uint32).itemsize)
 
         elif self.fileext == '.vtp':
             self.vtk_numpoints = (self.nx + 1) * (self.ny + 1) * (self.nz + 1)
             self.vtk_numpoint_components = 3
-            self.vtk_numlines = 2 * self.nx * self.ny + 2 * self.ny * self.nz + 2 * self.nx * self.nz + 3 * self.nx * self.ny * self.nz + self.nx + self.ny + self.nz
             self.vtk_numline_components = 2
-            self.vtk_connectivity_offset = round_value((self.vtk_numpoints * self.vtk_numpoint_components * np.dtype(np.float32).itemsize) + np.dtype(np.uint32).itemsize)
-            self.vtk_offsets_offset = round_value(self.vtk_connectivity_offset + (self.vtk_numlines * self.vtk_numline_components * np.dtype(np.uint32).itemsize) + np.dtype(np.uint32).itemsize)
-            self.vtk_materials_offset = round_value(self.vtk_offsets_offset + (self.vtk_numlines * np.dtype(np.uint32).itemsize) + np.dtype(np.uint32).itemsize)
-            self.datawritesize = np.dtype(np.float32).itemsize * self.vtk_numpoints * self.vtk_numpoint_components + np.dtype(np.uint32).itemsize * self.vtk_numlines * self.vtk_numline_components + np.dtype(np.uint32).itemsize * self.vtk_numlines + np.dtype(np.uint32).itemsize * self.vtk_numlines
+            self.vtk_nxlines = self.nx * (self.ny + 1) * (self.nz + 1)
+            self.vtk_nylines = self.ny * (self.nx + 1) * (self.nz + 1)
+            self.vtk_nzlines = self.nz * (self.nx + 1) * (self.ny + 1)
+            self.vtk_numlines = self.vtk_nxlines + self.vtk_nylines + self.vtk_nzlines
+            self.vtk_connectivity_offset = round_value((self.vtk_numpoints *
+                                                        self.vtk_numpoint_components *
+                                                        np.dtype(np.float32).itemsize) +
+                                                       np.dtype(np.uint32).itemsize)
+            self.vtk_offsets_offset = round_value(self.vtk_connectivity_offset +
+                                                  (self.vtk_numlines * self.vtk_numline_components * np.dtype(np.uint32).itemsize) +
+                                                  np.dtype(np.uint32).itemsize)
+            self.vtk_materials_offset = round_value(self.vtk_offsets_offset +
+                                                    (self.vtk_numlines * np.dtype(np.uint32).itemsize) +
+                                                    np.dtype(np.uint32).itemsize)
+            vtk_cell_offsets = ((self.vtk_numline_components * self.vtk_numlines) +
+                                self.vtk_numline_components - self.vtk_numline_components - 1) // self.vtk_numline_components + 1
+            self.datawritesize = (np.dtype(np.float32).itemsize * self.vtk_numpoints * self.vtk_numpoint_components +
+                                  np.dtype(np.uint32).itemsize * self.vtk_numlines * self.vtk_numline_components +
+                                  np.dtype(np.uint32).itemsize * self.vtk_numlines +
+                                  np.dtype(np.uint32).itemsize * vtk_cell_offsets +
+                                  np.dtype(np.uint32).itemsize * 4)
 
     def set_filename(self, appendmodelnumber, G):
         """
@@ -134,33 +155,47 @@ class GeometryView(object):
                 f.write('</CellData>\n'.encode('utf-8'))
                 f.write('</Piece>\n</ImageData>\n<AppendedData encoding="raw">\n_'.encode('utf-8'))
 
-                # Write material IDs
-                datasize = int(np.dtype(np.uint32).itemsize * self.vtk_nxcells * self.vtk_nycells * self.vtk_nzcells)
+                solid_geometry = np.zeros((self.vtk_ncells), dtype=np.uint32)
+                srcs_pml_geometry = np.zeros((self.vtk_ncells), dtype=np.int8)
+                rxs_geometry = np.zeros((self.vtk_ncells), dtype=np.int8)
+
+                define_normal_geometry(
+                    self.xs,
+                    self.xf,
+                    self.ys,
+                    self.yf,
+                    self.zs,
+                    self.zf,
+                    self.dx,
+                    self.dy,
+                    self.dz,
+                    G.solid,
+                    self.srcs_pml,
+                    self.rxs,
+                    solid_geometry,
+                    srcs_pml_geometry,
+                    rxs_geometry)
+
                 # Write number of bytes of appended data as UInt32
-                f.write(pack('I', datasize))
-                for k in range(self.zs, self.zf, self.dz):
-                    for j in range(self.ys, self.yf, self.dy):
-                        for i in range(self.xs, self.xf, self.dx):
-                            pbar.update(n=4)
-                            f.write(pack('I', G.solid[i, j, k]))
+                f.write(pack('I', solid_geometry.nbytes))
+                pbar.update(n=4)
+                # Write solid array
+                f.write(solid_geometry)
+                pbar.update(n=solid_geometry.nbytes)
 
-                # Write source/PML IDs
-                datasize = int(np.dtype(np.int8).itemsize * self.vtk_nxcells * self.vtk_nycells * self.vtk_nzcells)
-                f.write(pack('I', datasize))
-                for k in range(self.zs, self.zf, self.dz):
-                    for j in range(self.ys, self.yf, self.dy):
-                        for i in range(self.xs, self.xf, self.dx):
-                            pbar.update()
-                            f.write(pack('b', self.srcs_pml[i, j, k]))
+                # Write number of bytes of appended data as UInt32
+                f.write(pack('I', srcs_pml_geometry.nbytes))
+                pbar.update(n=4)
+                # Write sources and PML positions
+                f.write(srcs_pml_geometry)
+                pbar.update(n=srcs_pml_geometry.nbytes)
 
-                # Write receiver IDs
-                datasize = int(np.dtype(np.int8).itemsize * self.vtk_nxcells * self.vtk_nycells * self.vtk_nzcells)
-                f.write(pack('I', datasize))
-                for k in range(self.zs, self.zf, self.dz):
-                    for j in range(self.ys, self.yf, self.dy):
-                        for i in range(self.xs, self.xf, self.dx):
-                            pbar.update()
-                            f.write(pack('b', self.rxs[i, j, k]))
+                # Write number of bytes of appended data as UInt32
+                f.write(pack('I', rxs_geometry.nbytes))
+                pbar.update(n=4)
+                # Write receiver positions
+                f.write(rxs_geometry)
+                pbar.update(n=rxs_geometry.nbytes)
 
                 f.write('\n</AppendedData>\n</VTKFile>'.encode('utf-8'))
 
@@ -182,82 +217,76 @@ class GeometryView(object):
 
                 f.write('</Piece>\n</PolyData>\n<AppendedData encoding="raw">\n_'.encode('utf-8'))
 
-                # Write points
-                datasize = np.dtype(np.float32).itemsize * self.vtk_numpoints * self.vtk_numpoint_components
-                f.write(pack('I', datasize))
-                for i in range(self.xs, self.xf + 1):
-                    for j in range(self.ys, self.yf + 1):
-                        for k in range(self.zs, self.zf + 1):
-                            pbar.update(n=12)
-                            f.write(pack('fff', i * G.dx, j * G.dy, k * G.dz))
+                # Coordinates of each point
+                points = np.zeros((self.vtk_numpoints, 3), dtype=np.float32)
 
-                # Write cell type (line) connectivity for x components
-                datasize = np.dtype(np.uint32).itemsize * self.vtk_numlines * self.vtk_numline_components
-                f.write(pack('I', datasize))
-                vtk_x2 = (self.ny + 1) * (self.nz + 1)
-                for vtk_x1 in range(self.nx * (self.ny + 1) * (self.nz + 1)):
-                    pbar.update(n=8)
-                    f.write(pack('II', vtk_x1, vtk_x2))
-                    # print('x {} {}'.format(vtk_x1, vtk_x2))
-                    vtk_x2 += 1
+                # Number of x components
 
-                # Write cell type (line) connectivity for y components
-                vtk_ycnt1 = 1
-                vtk_ycnt2 = 0
-                for vtk_y1 in range((self.nx + 1) * (self.ny + 1) * (self.nz + 1)):
-                    if vtk_y1 >= (vtk_ycnt1 * (self.ny + 1) * (self.nz + 1)) - (self.nz + 1) and vtk_y1 < vtk_ycnt1 * (self.ny + 1) * (self.nz + 1):
-                        vtk_ycnt2 += 1
-                    else:
-                        vtk_y2 = vtk_y1 + self.nz + 1
-                        pbar.update(n=8)
-                        f.write(pack('II', vtk_y1, vtk_y2))
-                        # print('y {} {}'.format(vtk_y1, vtk_y2))
-                    if vtk_ycnt2 == self.nz + 1:
-                        vtk_ycnt1 += 1
-                        vtk_ycnt2 = 0
+                # Node connectivity. Each index contains a pair of connected x nodes
+                x_lines = np.zeros((self.vtk_nxlines, 2), dtype=np.uint32)
+                # Material at Ex location in Yee cell.
+                x_materials = np.zeros((self.vtk_nxlines), dtype=np.uint32)
 
-                # Write cell type (line) connectivity for z components
-                vtk_zcnt = self.nz
-                for vtk_z1 in range((self.nx + 1) * (self.ny + 1) * self.nz + (self.nx + 1) * (self.ny + 1)):
-                    if vtk_z1 != vtk_zcnt:
-                        vtk_z2 = vtk_z1 + 1
-                        pbar.update(n=8)
-                        f.write(pack('II', vtk_z1, vtk_z2))
-                        # print('z {} {}'.format(vtk_z1, vtk_z2))
-                    else:
-                        vtk_zcnt += self.nz + 1
+                y_lines = np.zeros((self.vtk_nylines, 2), dtype=np.uint32)
+                y_materials = np.zeros((self.vtk_nylines), dtype=np.uint32)
+
+                z_lines = np.zeros((self.vtk_nzlines, 2), dtype=np.uint32)
+                z_materials = np.zeros((self.vtk_nzlines), dtype=np.uint32)
+
+                define_fine_geometry(self.nx,
+                                     self.ny,
+                                     self.nz,
+                                     self.xs,
+                                     self.xf,
+                                     self.ys,
+                                     self.yf,
+                                     self.zs,
+                                     self.zf,
+                                     G.dx,
+                                     G.dy,
+                                     G.dz,
+                                     G.ID,
+                                     points,
+                                     x_lines,
+                                     x_materials,
+                                     y_lines,
+                                     y_materials,
+                                     z_lines,
+                                     z_materials)
+
+                # Write point data
+                f.write(pack('I', points.nbytes))
+                f.write(points)
+                pbar.update(n=points.nbytes)
+
+                # Write connectivity data
+                f.write(pack('I', np.dtype(np.uint32).itemsize * self.vtk_numlines * self.vtk_numline_components))
+                pbar.update(n=4)
+                f.write(x_lines)
+                pbar.update(n=x_lines.nbytes)
+                f.write(y_lines)
+                pbar.update(n=y_lines.nbytes)
+                f.write(z_lines)
+                pbar.update(n=z_lines.nbytes)
 
                 # Write cell type (line) offsets
-                vtk_cell_pts = 2
-                datasize = np.dtype(np.uint32).itemsize * self.vtk_numlines
-                f.write(pack('I', datasize))
-                for vtk_offsets in range(vtk_cell_pts, (self.vtk_numline_components * self.vtk_numlines) + vtk_cell_pts, vtk_cell_pts):
-                    pbar.update(n=4)
+                f.write(pack('I', np.dtype(np.uint32).itemsize * self.vtk_numlines))
+                pbar.update(n=4)
+                for vtk_offsets in range(self.vtk_numline_components, (self.vtk_numline_components * self.vtk_numlines) + self.vtk_numline_components, self.vtk_numline_components):
                     f.write(pack('I', vtk_offsets))
+                    pbar.update(n=4)
 
                 # Write material IDs per-cell-edge, i.e. from ID array
-                datasize = np.dtype(np.uint32).itemsize * self.vtk_numlines
-                f.write(pack('I', datasize))
-                for i in range(self.xs, self.xf):
-                    for j in range(self.ys, self.yf + 1):
-                        for k in range(self.zs, self.zf + 1):
-                            pbar.update(n=4)
-                            f.write(pack('I', G.ID[0, i, j, k]))
-
-                for i in range(self.xs, self.xf + 1):
-                    for j in range(self.ys, self.yf):
-                        for k in range(self.zs, self.zf + 1):
-                            pbar.update(n=4)
-                            f.write(pack('I', G.ID[1, i, j, k]))
-
-                for i in range(self.xs, self.xf + 1):
-                    for j in range(self.ys, self.yf + 1):
-                        for k in range(self.zs, self.zf):
-                            pbar.update(n=4)
-                            f.write(pack('I', G.ID[2, i, j, k]))
+                f.write(pack('I', np.dtype(np.uint32).itemsize * self.vtk_numlines))
+                pbar.update(n=4)
+                f.write(x_materials)
+                pbar.update(n=x_materials.nbytes)
+                f.write(y_materials)
+                pbar.update(n=y_materials.nbytes)
+                f.write(z_materials)
+                pbar.update(n=z_materials.nbytes)
 
                 f.write('\n</AppendedData>\n</VTKFile>'.encode('utf-8'))
-
                 self.write_gprmax_info(f, G, materialsonly=True)
 
     def write_gprmax_info(self, f, G, materialsonly=False):
@@ -323,7 +352,7 @@ class GeometryObjects(object):
         fdata = h5py.File(os.path.abspath(os.path.join(G.inputdirectory, self.filename)), 'w')
         fdata.attrs['gprMax'] = __version__
         fdata.attrs['Title'] = G.title
-        fdata.attrs['dx, dy, dz'] = (G.dx, G.dy, G.dz)
+        fdata.attrs['dx_dy_dz'] = (G.dx, G.dy, G.dz)
 
         # Get minimum and maximum integers of materials in geometry objects volume
         minmat = np.amin(G.ID[:, self.xs:self.xf + 1, self.ys:self.yf + 1, self.zs:self.zf + 1])

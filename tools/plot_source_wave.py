@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2017: The University of Edinburgh
+# Copyright (C) 2015-2018: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -24,10 +24,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from gprMax.exceptions import CmdInputError
+from gprMax.utilities import fft_power
 from gprMax.utilities import round_value
 from gprMax.waveforms import Waveform
-
-np.seterr(divide='ignore')
 
 
 def check_timewindow(timewindow, dt):
@@ -74,8 +73,7 @@ def mpl_plot(w, timewindow, dt, iterations, fft=False):
         plt (object): matplotlib plot object.
     """
 
-    time = np.linspace(0, 1, iterations)
-    time *= (iterations * dt)
+    time = np.linspace(0, (iterations - 1) * dt, num=iterations)
     waveform = np.zeros(len(time))
     timeiter = np.nditer(time, flags=['c_index'])
 
@@ -85,12 +83,7 @@ def mpl_plot(w, timewindow, dt, iterations, fft=False):
 
     print('Waveform characteristics...')
     print('Type: {}'.format(w.type))
-
-    if w.type == 'user':
-        waveform = w.uservalues
-        w.amp = np.max(np.abs(waveform))
-
-    print('Maximum amplitude: {:g}'.format(w.amp))
+    print('Maximum (absolute) amplitude: {:g}'.format(np.max(np.abs(waveform))))
 
     if w.freq and not w.type == 'gaussian':
         print('Centre frequency: {:g} Hz'.format(w.freq))
@@ -102,31 +95,20 @@ def mpl_plot(w, timewindow, dt, iterations, fft=False):
         delay = np.sqrt(2) / w.freq
         print('Time to centre of pulse: {:g} s'.format(delay))
 
-    # Calculate pulse width for gaussian
-    if w.type == 'gaussian':
-        powerdrop = -3  # dB
-        start = np.where((10 * np.log10(waveform / np.amax(waveform))) > powerdrop)[0][0]
-        stop = np.where((10 * np.log10(waveform[start:] / np.amax(waveform))) < powerdrop)[0][0] + start
-        print('Pulse width at {:d}dB, i.e. full width at half maximum (FWHM): {:g} s'.format(powerdrop, time[stop] - time[start]))
-
     print('Time window: {:g} s ({} iterations)'.format(timewindow, iterations))
     print('Time step: {:g} s'.format(dt))
 
     if fft:
-        # Calculate magnitude of frequency spectra of waveform
-        power = 10 * np.log10(np.abs(np.fft.fft(waveform))**2)
-        freqs = np.fft.fftfreq(power.size, d=dt)
+        # FFT
+        freqs, power = fft_power(waveform, dt)
 
-        # Shift powers so that frequency with maximum power is at zero decibels
-        power -= np.amax(power)
-
-        # Set plotting range to 4 times centre frequency of waveform
-        if w.type == 'user':
-            fmaxpower = np.where(power == 0)[0][0]
-            w.freq = freqs[fmaxpower]
-            print('Centre frequency: {:g} Hz'.format(w.freq))
-
-        pltrange = np.where(freqs > 4 * w.freq)[0][0]
+        # Set plotting range to 4 times frequency at max power of waveform or
+        # 4 times the centre frequency
+        freqmaxpower = np.where(np.isclose(power, 0))[0][0]
+        if freqs[freqmaxpower] > w.freq:
+            pltrange = np.where(freqs > 4 * freqs[freqmaxpower])[0][0]
+        else:
+            pltrange = np.where(freqs > 4 * w.freq)[0][0]
         pltrange = np.s_[0:pltrange]
 
         fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, num=w.type, figsize=(20, 10), facecolor='w', edgecolor='w')
@@ -153,7 +135,7 @@ def mpl_plot(w, timewindow, dt, iterations, fft=False):
         ax1.set_xlabel('Time [s]')
         ax1.set_ylabel('Amplitude')
 
-    [ax.grid() for ax in fig.axes]  # Turn on grid
+    [ax.grid(which='both', axis='both', linestyle='-.') for ax in fig.axes]  # Turn on grid
 
     # Save a PDF/PNG of the figure
     # fig.savefig(os.path.dirname(os.path.abspath(__file__)) + os.sep + w.type + '.pdf', dpi=None, format='pdf', bbox_inches='tight', pad_inches=0.1)

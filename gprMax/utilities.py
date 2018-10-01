@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2017: The University of Edinburgh
+# Copyright (C) 2015-2018: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -17,6 +17,7 @@
 # along with gprMax.  If not, see <http://www.gnu.org/licenses/>.
 
 from contextlib import contextmanager
+import codecs
 import decimal as d
 import platform
 import psutil
@@ -60,7 +61,7 @@ def logo(version):
     """
 
     description = '\n=== Electromagnetic modelling software based on the Finite-Difference Time-Domain (FDTD) method'
-    copyright = 'Copyright (C) 2015-2017: The University of Edinburgh'
+    copyright = 'Copyright (C) 2015-2018: The University of Edinburgh'
     authors = 'Authors: Craig Warren and Antonis Giannopoulos'
     licenseinfo1 = 'gprMax is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.\n'
     licenseinfo2 = 'gprMax is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.'
@@ -98,7 +99,7 @@ def open_path_file(path_or_file):
     """
 
     if isinstance(path_or_file, str):
-        f = file_to_close = open(path_or_file, 'r')
+        f = file_to_close = codecs.open(path_or_file, 'r', encoding='utf-8')
     else:
         f = path_or_file
         file_to_close = None
@@ -136,6 +137,35 @@ def round_value(value, decimalplaces=0):
 def round32(value):
     """Rounds up to nearest multiple of 32."""
     return int(32 * np.ceil(float(value) / 32))
+
+
+def fft_power(waveform, dt):
+    """Calculate a FFT of the given waveform of amplitude values;
+        converted to decibels and shifted so that maximum power is 0dB
+
+    Args:
+        waveform (ndarray): time domain waveform
+        dt (float): time step
+
+    Returns:
+        freqs (ndarray): frequency bins
+        power (ndarray): power
+    """
+
+    # Calculate magnitude of frequency spectra of waveform (ignore warning from taking a log of any zero values)
+    with np.errstate(divide='ignore'):
+        power = 10 * np.log10(np.abs(np.fft.fft(waveform))**2)
+
+    # Replace any NaNs or Infs from zero division
+    power[np.invert(np.isfinite(power))] = 0
+
+    # Frequency bins
+    freqs = np.fft.fftfreq(power.size, d=dt)
+
+    # Shift powers so that frequency with maximum power is at zero decibels
+    power -= np.amax(power)
+
+    return freqs, power
 
 
 def human_size(size, a_kilobyte_is_1024_bytes=False):
@@ -179,9 +209,17 @@ def get_host_info():
         # Manufacturer/model
         try:
             manufacturer = subprocess.check_output("wmic csproduct get vendor", shell=True, stderr=subprocess.STDOUT).decode('utf-8').strip()
-            manufacturer = manufacturer.split('\n')[1]
+            manufacturer = manufacturer.split('\n')
+            if len(manufacturer) > 1:
+                manufacturer = manufacturer[1]
+            else:
+                manufacturer = manufacturer[0]
             model = subprocess.check_output("wmic computersystem get model", shell=True, stderr=subprocess.STDOUT).decode('utf-8').strip()
-            model = model.split('\n')[1]
+            model = model.split('\n')
+            if len(model) > 1:
+                model = model[1]
+            else:
+                model = model[0]
         except subprocess.CalledProcessError:
             pass
         machineID = manufacturer + ' ' + model
@@ -279,6 +317,7 @@ def get_host_info():
 
     # Dictionary of host information
     hostinfo = {}
+    hostinfo['hostname'] = platform.node()
     hostinfo['machineID'] = machineID.strip()
     hostinfo['sockets'] = sockets
     hostinfo['cpuID'] = cpuID
@@ -300,13 +339,13 @@ def get_host_info():
 
 class GPU(object):
     """GPU information."""
-    
+
     def __init__(self, deviceID):
         """
         Args:
             deviceID (int): Device ID for GPU.
         """
-        
+
         self.deviceID = deviceID
         self.name = None
         self.pcibusID = None
@@ -315,11 +354,11 @@ class GPU(object):
 
     def get_gpu_info(self, drv):
         """Set information about GPU.
-            
+
         Args:
             drv (object): PyCuda driver.
         """
-        
+
         self.name = drv.Device(self.deviceID).name()
         self.pcibusID = drv.Device(self.deviceID).pci_bus_id()
         self.constmem = drv.Device(self.deviceID).total_constant_memory
@@ -328,11 +367,11 @@ class GPU(object):
 
 def detect_gpus():
     """Get information about Nvidia GPU(s).
-        
+
     Returns:
         gpus (list): Detected GPU(s) object(s).
     """
-    
+
     try:
         import pycuda.driver as drv
     except ImportError:
@@ -350,57 +389,7 @@ def detect_gpus():
         gpu = GPU(deviceID=i)
         gpu.get_gpu_info(drv)
         gpus.append(gpu)
-        gputext.append('{} - {}, {} RAM'.format(gpu.deviceID, gpu.name, human_size(gpu.totalmem, a_kilobyte_is_1024_bytes=True)))
-    print('GPU(s) detected: {}'.format('; '.join(gputext)))
+        gputext.append('{} - {}, {}'.format(gpu.deviceID, gpu.name, human_size(gpu.totalmem, a_kilobyte_is_1024_bytes=True)))
+    print('GPU(s) detected: {}'.format(' | '.join(gputext)))
 
     return gpus
-
-
-def memory_usage(G):
-    """Estimate the amount of memory (RAM) required to run a model.
-
-    Args:
-        G (class): Grid class instance - holds essential parameters describing the model.
-
-    Returns:
-        memestimate (int): Estimate of required memory in bytes
-    """
-
-    stdoverhead = 50e6
-
-    # 6 x field arrays + 6 x ID arrays
-    fieldarrays = (6 + 6) * (G.nx + 1) * (G.ny + 1) * (G.nz + 1) * np.dtype(floattype).itemsize
-
-    solidarray = G.nx * G.ny * G.nz * np.dtype(np.uint32).itemsize
-
-    # 12 x rigidE array components + 6 x rigidH array components
-    rigidarrays = (12 + 6) * G.nx * G.ny * G.nz * np.dtype(np.int8).itemsize
-
-    # PML arrays
-    pmlarrays = 0
-    for (k, v) in G.pmlthickness.items():
-        if v > 0:
-            if 'x' in k:
-                pmlarrays += ((v + 1) * G.ny * (G.nz + 1))
-                pmlarrays += ((v + 1) * (G.ny + 1) * G.nz)
-                pmlarrays += (v * G.ny * (G.nz + 1))
-                pmlarrays += (v * (G.ny + 1) * G.nz)
-            elif 'y' in k:
-                pmlarrays += (G.nx * (v + 1) * (G.nz + 1))
-                pmlarrays += ((G.nx + 1) * (v + 1) * G.nz)
-                pmlarrays += ((G.nx + 1) * v * G.nz)
-                pmlarrays += (G.nx * v * (G.nz + 1))
-            elif 'z' in k:
-                pmlarrays += (G.nx * (G.ny + 1) * (v + 1))
-                pmlarrays += ((G.nx + 1) * G.ny * (v + 1))
-                pmlarrays += ((G.nx + 1) * G.ny * v)
-                pmlarrays += (G.nx * (G.ny + 1) * v)
-
-    # Any dispersive material coefficients
-    disparrays = 0
-    if Material.maxpoles != 0:
-        disparrays = 3 * Material.maxpoles * (G.nx + 1) * (G.ny + 1) * (G.nz + 1) * np.dtype(complextype).itemsize
-
-    memestimate = int(stdoverhead + fieldarrays + solidarray + rigidarrays + pmlarrays + disparrays)
-
-    return memestimate

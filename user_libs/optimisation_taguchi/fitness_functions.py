@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2017, Craig Warren
+# Copyright (C) 2015-2018, Craig Warren
 #
 # This module is licensed under the Creative Commons Attribution-ShareAlike 4.0 International License.
 # To view a copy of this license, visit http://creativecommons.org/licenses/by-sa/4.0/.
@@ -12,8 +12,6 @@ import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import signal
-
-np.seterr(divide='ignore')
 
 from gprMax.exceptions import GeneralError
 
@@ -183,9 +181,14 @@ def min_sum_diffs(filename, args):
         if output.attrs['Name'] in args['outputs']:
             outputname = list(output.keys())[0]
             modelresp = np.array(output[outputname])
+
             # Calculate sum of differences
-            tmp = 20 * np.log10(np.abs(modelresp - refresp) / np.amax(np.abs(refresp)))
-            tmp = np.abs(np.sum(tmp[-np.isneginf(tmp)])) / len(tmp[-np.isneginf(tmp)])
+            with np.errstate(divide='ignore'): # Ignore warning from taking a log of any zero values
+                tmp = 20 * np.log10(np.abs(modelresp - refresp) / np.amax(np.abs(refresp)))
+            # Replace any NaNs or Infs from zero division
+            tmp[np.invert(np.isfinite(tmp))] = 0
+
+            tmp = np.abs(np.sum(tmp)) / len(tmp)
             diffdB += tmp
             outputs += 1
 

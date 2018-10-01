@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2017: The University of Edinburgh
+# Copyright (C) 2015-2018: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -131,7 +131,7 @@ class VoltageSource(Source):
             requirednumID = G.ID[G.IDlookup[componentID], i, j, k]
             material = next(x for x in G.materials if x.numID == requirednumID)
             newmaterial = deepcopy(material)
-            newmaterial.ID = material.ID + '+VoltageSource_' + str(self.resistance)
+            newmaterial.ID = material.ID + '+' + self.ID
             newmaterial.numID = len(G.materials)
             newmaterial.averagable = False
             newmaterial.type += ',\nvoltage-source'
@@ -217,17 +217,17 @@ class MagneticDipole(Source):
 
 def gpu_initialise_src_arrays(sources, G):
     """Initialise arrays on GPU for source coordinates/polarisation, other source information, and source waveform values.
-        
+
     Args:
         sources (list): List of sources of one class, e.g. HertzianDipoles.
         G (class): Grid class instance - holds essential parameters describing the model.
-        
+
     Returns:
         srcinfo1_gpu (int): numpy array of source cell coordinates and polarisation information.
         srcinfo2_gpu (float): numpy array of other source information, e.g. length, resistance etc...
         srcwaves_gpu (float): numpy array of source waveform values.
     """
-        
+
     import pycuda.gpuarray as gpuarray
 
     srcinfo1 = np.zeros((len(sources), 4), dtype=np.int32)
@@ -237,14 +237,14 @@ def gpu_initialise_src_arrays(sources, G):
         srcinfo1[i, 0] = src.xcoord
         srcinfo1[i, 1] = src.ycoord
         srcinfo1[i, 2] = src.zcoord
-        
+
         if src.polarisation == 'x':
             srcinfo1[i, 3] = 0
         elif src.polarisation == 'y':
             srcinfo1[i, 3] = 1
         elif src.polarisation == 'z':
             srcinfo1[i, 3] = 2
-        
+
         if src.__class__.__name__ == 'HertzianDipole':
             srcinfo2[i] = src.dl
             srcwaves[i, :] = src.waveformvaluesJ
@@ -253,7 +253,7 @@ def gpu_initialise_src_arrays(sources, G):
             srcwaves[i, :] = src.waveformvaluesJ
         elif src.__class__.__name__ == 'MagneticDipole':
             srcwaves[i, :] = src.waveformvaluesM
-        
+
     srcinfo1_gpu = gpuarray.to_gpu(srcinfo1)
     srcinfo2_gpu = gpuarray.to_gpu(srcinfo2)
     srcwaves_gpu = gpuarray.to_gpu(srcwaves)

@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2017: The University of Edinburgh
+# Copyright (C) 2015-2018: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -44,7 +44,7 @@ class Rx(object):
 
 def gpu_initialise_rx_arrays(G):
     """Initialise arrays on GPU for receiver coordinates and to store field components for receivers.
-        
+
     Args:
         G (class): Grid class instance - holds essential parameters describing the model.
     """
@@ -72,7 +72,7 @@ def gpu_get_rx_array(rxs_gpu, rxcoords_gpu, G):
     """Copy output from receivers array used on GPU back to receiver objects.
 
     Args:
-        rxs_gpu (int): numpy array of receiver data from GPU - rows are field components; columns are iterations; pages are receivers.
+        rxs_gpu (float): numpy array of receiver data from GPU - rows are field components; columns are iterations; pages are receivers.
         rxcoords_gpu (float): numpy array of receiver coordinates from GPU.
         G (class): Grid class instance - holds essential parameters describing the model.
     """

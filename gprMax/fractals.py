@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2017: The University of Edinburgh
+# Copyright (C) 2015-2018: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -17,11 +17,12 @@
 # along with gprMax.  If not, see <http://www.gnu.org/licenses/>.
 
 import numpy as np
+from scipy import fftpack
 
 from gprMax.constants import floattype
 from gprMax.constants import complextype
-from gprMax.fractals_generate import generate_fractal2D
-from gprMax.fractals_generate import generate_fractal3D
+from gprMax.fractals_generate_ext import generate_fractal2D
+from gprMax.fractals_generate_ext import generate_fractal3D
 from gprMax.utilities import round_value
 
 np.seterr(divide='raise')
@@ -62,7 +63,7 @@ class FractalSurface(object):
 
     def generate_fractal_surface(self, G):
         """Generate a 2D array with a fractal distribution.
-            
+
         Args:
             G (class): Grid class instance - holds essential parameters describing the model.
         """
@@ -84,23 +85,23 @@ class FractalSurface(object):
         A = R.randn(surfacedims[0], surfacedims[1])
 
         # 2D FFT
-        A = np.fft.fftn(A)
+        A = fftpack.fftn(A)
         # Shift the zero frequency component to the centre of the array
-        A = np.fft.fftshift(A)
+        A = fftpack.fftshift(A)
 
         # Generate fractal
         generate_fractal2D(surfacedims[0], surfacedims[1], G.nthreads, self.b, self.weighting, v1, A, self.fractalsurface)
 
         # Shift the zero frequency component to start of the array
-        self.fractalsurface = np.fft.ifftshift(self.fractalsurface)
+        self.fractalsurface = fftpack.ifftshift(self.fractalsurface)
         # Take the real part (numerical errors can give rise to an imaginary part) of the IFFT
-        self.fractalsurface = np.real(np.fft.ifftn(self.fractalsurface))
+        self.fractalsurface = np.real(fftpack.ifftn(self.fractalsurface))
         # Scale the fractal volume according to requested range
         fractalmin = np.amin(self.fractalsurface)
         fractalmax = np.amax(self.fractalsurface)
         fractalrange = fractalmax - fractalmin
         self.fractalsurface = self.fractalsurface * ((self.fractalrange[1] - self.fractalrange[0]) / fractalrange) \
-                + self.fractalrange[0] - ((self.fractalrange[1] - self.fractalrange[0]) / fractalrange) * fractalmin
+            + self.fractalrange[0] - ((self.fractalrange[1] - self.fractalrange[0]) / fractalrange) * fractalmin
 
 
 class FractalVolume(object):
@@ -135,7 +136,7 @@ class FractalVolume(object):
 
     def generate_fractal_volume(self, G):
         """Generate a 3D volume with a fractal distribution.
-            
+
         Args:
             G (class): Grid class instance - holds essential parameters describing the model.
         """
@@ -166,17 +167,17 @@ class FractalVolume(object):
         A = R.randn(self.nx, self.ny, self.nz)
 
         # 3D FFT
-        A = np.fft.fftn(A)
+        A = fftpack.fftn(A)
         # Shift the zero frequency component to the centre of the array
-        A = np.fft.fftshift(A)
+        A = fftpack.fftshift(A)
 
         # Generate fractal
         generate_fractal3D(self.nx, self.ny, self.nz, G.nthreads, self.b, self.weighting, v1, A, self.fractalvolume)
 
         # Shift the zero frequency component to the start of the array
-        self.fractalvolume = np.fft.ifftshift(self.fractalvolume)
+        self.fractalvolume = fftpack.ifftshift(self.fractalvolume)
         # Take the real part (numerical errors can give rise to an imaginary part) of the IFFT
-        self.fractalvolume = np.real(np.fft.ifftn(self.fractalvolume))
+        self.fractalvolume = np.real(fftpack.ifftn(self.fractalvolume))
         # Bin fractal values
         bins = np.linspace(np.amin(self.fractalvolume), np.amax(self.fractalvolume), self.nbins)
         for j in range(self.ny):

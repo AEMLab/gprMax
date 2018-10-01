@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2017: The University of Edinburgh
+# Copyright (C) 2015-2018: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -93,7 +93,7 @@ for i, model in enumerate(testmodels):
         rxposrelative = ((rxpos[0] - txpos[0]), (rxpos[1] - txpos[1]), (rxpos[2] - txpos[2]))
 
         # Analytical solution of a dipole in free space
-        dataref = hertzian_dipole_fs(filetest.attrs['Iterations'], filetest.attrs['dt'], filetest.attrs['dx, dy, dz'], rxposrelative)
+        dataref = hertzian_dipole_fs(filetest.attrs['Iterations'], filetest.attrs['dt'], filetest.attrs['dx_dy_dz'], rxposrelative)
 
         filetest.close()
 
@@ -116,7 +116,7 @@ for i, model in enumerate(testmodels):
         floattyperef = fileref[path + outputsref[0]].dtype
         floattypetest = filetest[path + outputstest[0]].dtype
 
-        # Array for storing time
+        # Arrays for storing time
         timeref = np.zeros((fileref.attrs['Iterations']), dtype=floattyperef)
         timeref = np.arange(0, fileref.attrs['dt'] * fileref.attrs['Iterations'], fileref.attrs['dt']) / 1e-9
         timetest = np.zeros((filetest.attrs['Iterations']), dtype=floattypetest)
@@ -139,8 +139,12 @@ for i, model in enumerate(testmodels):
     for i in range(len(outputstest)):
         max = np.amax(np.abs(dataref[:, i]))
         datadiffs[:, i] = np.divide(np.abs(dataref[:, i] - datatest[:, i]), max, out=np.zeros_like(dataref[:, i]), where=max != 0)  # Replace any division by zero with zero
+
+        # Calculate power (ignore warning from taking a log of any zero values)
         with np.errstate(divide='ignore'):
-            datadiffs[:, i] = 20 * np.log10(datadiffs[:, i])  # Ignore any zero division in log10
+            datadiffs[:, i] = 20 * np.log10(datadiffs[:, i])
+        # Replace any NaNs or Infs from zero division
+        datadiffs[:, i][np.invert(np.isfinite(datadiffs[:, i]))] = 0
 
     # Store max difference
     maxdiff = np.amax(np.amax(datadiffs))

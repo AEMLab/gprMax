@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2017: The University of Edinburgh
+# Copyright (C) 2015-2018: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -33,7 +33,7 @@ from gprMax.exceptions import CmdInputError
 from gprMax.gprMax import run_std_sim
 from gprMax.gprMax import run_mpi_sim
 from gprMax.utilities import get_terminal_width
-from gprMax.utilities import  open_path_file
+from gprMax.utilities import open_path_file
 
 
 def run_opt_sim(args, inputfile, usernamespace):

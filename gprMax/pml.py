@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2017: The University of Edinburgh
+# Copyright (C) 2015-2018: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -253,7 +253,7 @@ class PML(object):
             G (class): Grid class instance - holds essential parameters describing the model.
         """
 
-        func = getattr(import_module('gprMax.pml_updates'), 'update_pml_' + str(len(self.CFS)) + 'order_electric_' + self.direction)
+        func = getattr(import_module('gprMax.pml_updates_ext'), 'update_pml_' + str(len(self.CFS)) + 'order_electric_' + self.direction)
         func(self.xs, self.xf, self.ys, self.yf, self.zs, self.zf, G.nthreads, G.updatecoeffsE, G.ID, G.Ex, G.Ey, G.Ez, G.Hx, G.Hy, G.Hz, self.EPhi1, self.EPhi2, self.ERA, self.ERB, self.ERE, self.ERF, self.d)
 
     def update_magnetic(self, G):
@@ -263,7 +263,7 @@ class PML(object):
             G (class): Grid class instance - holds essential parameters describing the model.
         """
 
-        func = getattr(import_module('gprMax.pml_updates'), 'update_pml_' + str(len(self.CFS)) + 'order_magnetic_' + self.direction)
+        func = getattr(import_module('gprMax.pml_updates_ext'), 'update_pml_' + str(len(self.CFS)) + 'order_magnetic_' + self.direction)
         func(self.xs, self.xf, self.ys, self.yf, self.zs, self.zf, G.nthreads, G.updatecoeffsH, G.ID, G.Ex, G.Ey, G.Ez, G.Hx, G.Hy, G.Hz, self.HPhi1, self.HPhi2, self.HRA, self.HRB, self.HRE, self.HRF, self.d)
 
     def gpu_set_blocks_per_grid(self, G):
