@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2018: The University of Edinburgh
+# Copyright (C) 2015-2019: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -164,7 +164,10 @@ def run_model(args, currentmodelrun, modelend, numbermodelruns, inputfile, usern
         G.memory_estimate_basic()
         G.memory_check()
         if G.messages:
-            print('\nTotal memory (RAM) required: ~{}\n'.format(human_size(G.memoryusage)))
+            if G.gpu is None:
+                print('\nMemory (RAM) required: ~{}\n'.format(human_size(G.memoryusage)))
+            else:
+                print('\nMemory (RAM) required: ~{} host + ~{} GPU\n'.format(human_size(G.memoryusage), human_size(G.memoryusage)))
 
         # Initialise an array for volumetric material IDs (solid), boolean
         # arrays for specifying materials not to be averaged (rigid),
@@ -243,7 +246,7 @@ def run_model(args, currentmodelrun, modelend, numbermodelruns, inputfile, usern
             G.memoryusage += int(3 * Material.maxpoles * (G.nx + 1) * (G.ny + 1) * (G.nz + 1) * np.dtype(complextype).itemsize)
             G.memory_check()
             if G.messages:
-                print('\nTotal memory (RAM) required, updated (dispersive): ~{}\n'.format(human_size(G.memoryusage)))
+                print('\nMemory (RAM) required - updated (dispersive): ~{}\n'.format(human_size(G.memoryusage)))
 
             G.initialise_dispersive_arrays()
 
@@ -256,7 +259,7 @@ def run_model(args, currentmodelrun, modelend, numbermodelruns, inputfile, usern
             G.memoryusage += int(snapsmemsize)
             G.memory_check(snapsmemsize=int(snapsmemsize))
             if G.messages:
-                print('\nTotal memory (RAM) required, updated (snapshots): ~{}\n'.format(human_size(G.memoryusage)))
+                print('\nMemory (RAM) required - updated (snapshots): ~{}\n'.format(human_size(G.memoryusage)))
 
         # Process complete list of materials - calculate update coefficients,
         # store in arrays, and build text list of materials/properties
@@ -354,7 +357,7 @@ def run_model(args, currentmodelrun, modelend, numbermodelruns, inputfile, usern
         if G.gpu is None:
             tsolve = solve_cpu(currentmodelrun, modelend, G)
         else:
-            tsolve = solve_gpu(currentmodelrun, modelend, G)
+            tsolve, memsolve = solve_gpu(currentmodelrun, modelend, G)
 
         # Write an output file in HDF5 format
         write_hdf5_outputfile(outputfile, G.Ex, G.Ey, G.Ez, G.Hx, G.Hy, G.Hz, G)
@@ -375,7 +378,10 @@ def run_model(args, currentmodelrun, modelend, numbermodelruns, inputfile, usern
             print()
 
         if G.messages:
-            print('Total memory (RAM) used: ~{}'.format(human_size(p.memory_info().rss)))
+            if G.gpu is None:
+                print('Memory (RAM) used: ~{}'.format(human_size(p.memory_info().rss)))
+            else:
+                print('Memory (RAM) used: ~{} host + ~{} GPU'.format(human_size(p.memory_info().rss), human_size(memsolve)))
             print('Solving time [HH:MM:SS]: {}'.format(datetime.timedelta(seconds=tsolve)))
 
     # If geometry information to be reused between model runs then FDTDGrid
@@ -558,6 +564,10 @@ def solve_gpu(currentmodelrun, modelend, G):
 
     for iteration in tqdm(range(G.iterations), desc='Running simulation, model ' + str(currentmodelrun) + '/' + str(modelend), ncols=get_terminal_width() - 1, file=sys.stdout, disable=G.tqdmdisable):
 
+        # Get GPU memory usage on final iteration
+        if iteration == G.iterations - 1:
+            memsolve = drv.mem_get_info()[1] - drv.mem_get_info()[0]
+
         # Store field component values for every receiver
         if G.rxs:
             store_outputs_gpu(np.int32(len(G.rxs)), np.int32(iteration),
@@ -667,4 +677,4 @@ def solve_gpu(currentmodelrun, modelend, G):
     ctx.pop()
     del ctx
 
-    return tsolve
+    return tsolve, memsolve

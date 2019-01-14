@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2018: The University of Edinburgh
+# Copyright (C) 2015-2019: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -677,7 +677,7 @@ def rx(x, y, z, identifier=None, to_save=None, polarisation=None, dxdy=None, rot
     c = Coordinate(x, y, z)
     to_save_str = ''
     if to_save is not None:
-        to_save_str = ' '.join(to_save)
+        to_save_str = ''.join(to_save)
 
     command('rx', str(c), identifier, to_save_str)
 
