@@ -24,7 +24,12 @@ import os
 import sys
 
 from enum import Enum
-from time import perf_counter
+
+# There is a bug with threading and MKL on macOS
+# (https://github.com/gprMax/gprMax/issues/195) . Setting the MKL threading
+# layer to sequential solves it, but must be done before numpy is imported.
+if sys.platform == 'darwin':
+    os.environ["MKL_THREADING_LAYER"] = 'sequential'
 
 import h5py
 import numpy as np
@@ -36,19 +41,16 @@ from gprMax.constants import m0
 from gprMax.constants import z0
 from gprMax.exceptions import GeneralError
 from gprMax.model_build_run import run_model
-from gprMax.utilities import detect_gpus
+from gprMax.utilities import detect_check_gpus
 from gprMax.utilities import get_host_info
 from gprMax.utilities import get_terminal_width
 from gprMax.utilities import human_size
 from gprMax.utilities import logo
 from gprMax.utilities import open_path_file
-
+from gprMax.utilities import timer
 
 def main():
     """This is the main function for gprMax."""
-
-    # Print gprMax logo, version, and licencing/copyright information
-    logo(__version__ + ' (' + codename + ')')
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(prog='gprMax', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -57,9 +59,9 @@ def main():
     parser.add_argument('-task', type=int, help='task identifier (model number) for job array on Open Grid Scheduler/Grid Engine (http://gridscheduler.sourceforge.net/index.html)')
     parser.add_argument('-restart', type=int, help='model number to restart from, e.g. when creating B-scan')
     parser.add_argument('-mpi', type=int, help='number of MPI tasks, i.e. master + workers')
-    parser.add_argument('-mpialt', action='store_true', default=False, help='flag to switch on MPI task farm')
+    parser.add_argument('--mpi-no-spawn', action='store_true', default=False, help='flag to use MPI without spawn mechanism')
     parser.add_argument('--mpi-worker', action='store_true', default=False, help=argparse.SUPPRESS)
-    parser.add_argument('-gpu', type=int, action='append', nargs='?', const=True, help='flag to use Nvidia GPU (option to give device ID)')
+    parser.add_argument('-gpu', type=int, action='append', nargs='*', help='flag to use Nvidia GPU or option to give list of device ID(s)')
     parser.add_argument('-benchmark', action='store_true', default=False, help='flag to switch on benchmarking mode')
     parser.add_argument('--geometry-only', action='store_true', default=False, help='flag to only build model and produce geometry file(s)')
     parser.add_argument('--geometry-fixed', action='store_true', default=False, help='flag to not reprocess model geometry, e.g. for B-scans where the geometry is fixed')
@@ -76,7 +78,7 @@ def api(
     task=None,
     restart=None,
     mpi=False,
-    mpialt=False,
+    mpi_no_spawn=False,
     mpicomm=None,
     gpu=None,
     benchmark=False,
@@ -86,9 +88,6 @@ def api(
     opt_taguchi=False
 ):
     """If installed as a module this is the entry point."""
-
-    # Print gprMax logo, version, and licencing/copyright information
-    logo(__version__ + ' (' + codename + ')')
 
     class ImportArguments:
         pass
@@ -100,7 +99,7 @@ def api(
     args.task = task
     args.restart = restart
     args.mpi = mpi
-    args.mpialt = mpialt
+    args.mpi_no_spawn = mpi_no_spawn
     args.mpicomm = mpicomm
     args.gpu = gpu
     args.benchmark = benchmark
@@ -120,6 +119,9 @@ def run_main(args):
         args (dict): Namespace with input arguments from command line or api.
     """
 
+    # Print gprMax logo, version, and licencing/copyright information
+    logo(__version__ + ' (' + codename + ')')
+
     with open_path_file(args.inputfile) as inputfile:
 
         # Get information about host machine
@@ -129,35 +131,20 @@ def run_main(args):
                                                                             hostinfo['machineID'], hostinfo['sockets'], hostinfo['cpuID'], hostinfo['physicalcores'],
                                                                             hyperthreading, human_size(hostinfo['ram'], a_kilobyte_is_1024_bytes=True), hostinfo['osversion']))
 
-        # Get information/setup Nvidia GPU(s)
+        # Get information/setup any Nvidia GPU(s)
         if args.gpu is not None:
-            # Extract first item of list, either True to automatically determine device ID,
-            # or an integer to manually specify device ID
-            args.gpu = args.gpu[0]
-            gpus = detect_gpus()
+            # Flatten a list of lists
+            if any(isinstance(element, list) for element in args.gpu):
+                args.gpu = [val for sublist in args.gpu for val in sublist]
+            gpus, allgpustext = detect_check_gpus(args.gpu)
+            print('GPU(s) detected: {}'.format(' | '.join(allgpustext)))
 
-            # If a device ID is specified check it is valid
-            if not isinstance(args.gpu, bool):
-                if args.gpu > len(gpus) - 1:
-                    raise GeneralError('GPU with device ID {} does not exist'.format(args.gpu))
-                # Set args.gpu to GPU object to access elsewhere
-                args.gpu = next(gpu for gpu in gpus if gpu.deviceID == args.gpu)
-
-            # If no device ID is specified
+            # If in MPI mode or benchmarking provide list of GPU objects, otherwise
+            # provide single GPU object
+            if args.mpi or args.mpi_no_spawn or args.benchmark:
+                args.gpu = gpus
             else:
-                # If in MPI mode then set args.gpu to list of available GPUs
-                if args.mpi:
-                    # if args.mpi - 1 > len(gpus):
-                    #     raise GeneralError('Too many MPI tasks requested ({}). The number of MPI tasks requested can only be a maximum of the number of GPU(s) detected plus one, i.e. {} GPU worker tasks + 1 CPU master task'.format(args.mpi, len(gpus)))
-                    args.gpu = gpus
-                elif args.mpialt:
-                    args.gpu = gpus
-                # If benchmarking mode then set args.gpu to list of available GPUs
-                elif args.benchmark:
-                    args.gpu = gpus
-                # Otherwise set args.gpu to GPU object with default device ID (0) to access elsewhere
-                else:
-                    args.gpu = next(gpu for gpu in gpus if gpu.deviceID == 0)
+                args.gpu = gpus[0]
 
         # Create a separate namespace that users can access in any Python code blocks in the input file
         usernamespace = {'c': c, 'e0': e0, 'm0': m0, 'z0': z0, 'number_model_runs': args.n, 'inputfile': os.path.abspath(inputfile.name)}
@@ -192,9 +179,13 @@ def run_main(args):
                     raise GeneralError('MPI cannot be combined with job array mode')
                 run_mpi_sim(args, inputfile, usernamespace)
 
-            # TEST! TEST! TEST! Alternate MPI configuration
-            elif args.mpialt:
-                run_mpi_alt_sim(args, inputfile, usernamespace)
+            # Alternate MPI configuration that does not use MPI spawn mechanism
+            elif args.mpi_no_spawn:
+                if args.n == 1:
+                    raise GeneralError('MPI is not beneficial when there is only one model to run')
+                if args.task:
+                    raise GeneralError('MPI cannot be combined with job array mode')
+                run_mpi_no_spawn_sim(args, inputfile, usernamespace)
 
             # Standard behaviour - models run serially with each model parallelised with OpenMP (CPU) or CUDA (GPU)
             else:
@@ -230,7 +221,7 @@ def run_std_sim(args, inputfile, usernamespace, optparams=None):
         modelend = modelstart + args.n
     numbermodelruns = args.n
 
-    tsimstart = perf_counter()
+    tsimstart = timer()
     for currentmodelrun in range(modelstart, modelend):
         # If Taguchi optimistaion, add specific value for each parameter to
         # optimise for each experiment to user accessible namespace
@@ -242,7 +233,7 @@ def run_std_sim(args, inputfile, usernamespace, optparams=None):
         else:
             modelusernamespace = usernamespace
         run_model(args, currentmodelrun, modelend - 1, numbermodelruns, inputfile, modelusernamespace)
-    tsimend = perf_counter()
+    tsimend = timer()
     simcompletestr = '\n=== Simulation completed in [HH:MM:SS]: {}'.format(datetime.timedelta(seconds=tsimend - tsimstart))
     print('{} {}\n'.format(simcompletestr, '=' * (get_terminal_width() - 1 - len(simcompletestr))))
 
@@ -296,15 +287,10 @@ def run_benchmark_sim(args, inputfile, usernamespace):
     # GPU only benchmarking
     else:
         # Set size of array to store GPU runtimes and number of runs of model required
-        if isinstance(args.gpu, list):
-            for gpu in args.gpu:
-                gpuIDs.append(gpu.name)
-            gputimes = np.zeros(len(args.gpu))
-            numbermodelruns = len(args.gpu)
-        else:
-            gpuIDs.append(args.gpu.name)
-            gputimes = np.zeros(1)
-            numbermodelruns = 1
+        for gpu in args.gpu:
+            gpuIDs.append(gpu.name)
+        gputimes = np.zeros(len(args.gpu))
+        numbermodelruns = len(args.gpu)
         # Store GPU information in a temp variable
         gpus = args.gpu
 
@@ -318,10 +304,7 @@ def run_benchmark_sim(args, inputfile, usernamespace):
             cputimes[currentmodelrun - 1] = run_model(args, currentmodelrun, modelend - 1, numbermodelruns, inputfile, usernamespace)
         # Run GPU benchmark
         else:
-            if isinstance(gpus, list):
-                args.gpu = gpus[(currentmodelrun - 1)]
-            else:
-                args.gpu = gpus
+            args.gpu = gpus[(currentmodelrun - 1)]
             os.environ['OMP_NUM_THREADS'] = str(hostinfo['physicalcores'])
             gputimes[(currentmodelrun - 1)] = run_model(args, currentmodelrun, modelend - 1, numbermodelruns, inputfile, usernamespace)
 
@@ -376,14 +359,15 @@ def run_mpi_sim(args, inputfile, usernamespace, optparams=None):
     if workerflag not in sys.argv:
         # N.B Spawned worker flag (--mpi-worker) applied to sys.argv when MPI.Spawn is called
 
-        # Get MPI communicator object either through argument or just get comm_world
+        # See if the MPI communicator object is being passed as an argument (likely from a MPI.Split)
         if hasattr(args, 'mpicomm'):
             comm = args.mpicomm
         else:
             comm = MPI.COMM_WORLD
-        rank = comm.Get_rank()  # rank of this process
-        tsimstart = perf_counter()
-        print('MPI master ({}, rank {}) on {} using {} workers\n'.format(comm.name, rank, hostname, numworkers))
+        tsimstart = timer()
+        mpistartstr = '\n=== MPI task farm (USING MPI Spawn)'
+        print('{} {}'.format(mpistartstr, '=' * (get_terminal_width() - 1 - len(mpistartstr))))
+        print('=== MPI master ({}, rank: {}) on {} spawning {} workers...'.format(comm.name, comm.Get_rank(), hostname, numworkers))
 
         # Assemble a sys.argv replacement to pass to spawned worker
         # N.B This is required as sys.argv not available when gprMax is called via api()
@@ -396,9 +380,9 @@ def run_mpi_sim(args, inputfile, usernamespace, optparams=None):
                     myargv.append(value)
                 elif 'gpu' in key:
                     myargv.append('-' + key)
-                    # If specific GPU device ID is given then add it
-                    if not isinstance(value, list):
-                        myargv.append(str(value.deviceID))
+                    # Add GPU device ID(s) from GPU objects
+                    for gpu in args.gpu:
+                        myargv.append(str(gpu.deviceID))
                 elif 'mpicomm' in key:
                     pass
                 elif '_' in key:
@@ -414,6 +398,7 @@ def run_mpi_sim(args, inputfile, usernamespace, optparams=None):
         for model in range(modelstart, modelend):
             workobj = dict()
             workobj['currentmodelrun'] = model
+            workobj['mpicommname'] = comm.name
             if optparams:
                 workobj['optparams'] = optparams
             worklist.append(workobj)
@@ -431,15 +416,14 @@ def run_mpi_sim(args, inputfile, usernamespace, optparams=None):
         # Shutdown communicators
         newcomm.Disconnect()
 
-        tsimend = perf_counter()
-        simcompletestr = '\n=== Simulation completed in [HH:MM:SS]: {}'.format(datetime.timedelta(seconds=tsimend - tsimstart))
+        tsimend = timer()
+        simcompletestr = '\n=== MPI master ({}, rank: {}) on {} completed simulation in [HH:MM:SS]: {}'.format(comm.name, comm.Get_rank(), hostname, datetime.timedelta(seconds=tsimend - tsimstart))
         print('{} {}\n'.format(simcompletestr, '=' * (get_terminal_width() - 1 - len(simcompletestr))))
 
     ##################
     # Worker process #
     ##################
     elif workerflag in sys.argv:
-        print('Worker')
         # Connect to parent to get communicator
         try:
             comm = MPI.Comm.Get_parent()
@@ -447,20 +431,18 @@ def run_mpi_sim(args, inputfile, usernamespace, optparams=None):
         except ValueError:
             raise ValueError('MPI worker could not connect to parent')
 
+        # Select GPU and get info
+        gpuinfo = ''
+        if args.gpu is not None:
+            # Set device ID based on rank from list of GPUs
+            args.gpu = args.gpu[rank]
+            gpuinfo = ' using {} - {}, {} RAM '.format(args.gpu.deviceID, args.gpu.name, human_size(args.gpu.totalmem, a_kilobyte_is_1024_bytes=True))
+
         # Ask for work until stop sentinel
         for work in iter(lambda: comm.sendrecv(0, dest=0), StopIteration):
             currentmodelrun = work['currentmodelrun']
 
-            # Get info and setup device ID for GPU(s)
-            gpuinfo = ''
-            if args.gpu is not None:
-                # Set device ID for multiple GPUs
-                if isinstance(args.gpu, list):
-                    deviceID = (rank - 1) % len(args.gpu)
-                    args.gpu = next(gpu for gpu in args.gpu if gpu.deviceID == deviceID)
-                gpuinfo = ' using {} - {}, {} RAM '.format(args.gpu.deviceID, args.gpu.name, human_size(args.gpu.totalmem, a_kilobyte_is_1024_bytes=True))
-
-            # If Taguchi optimistaion, add specific value for each parameter to
+            # If Taguchi optimisation, add specific value for each parameter to
             # optimise for each experiment to user accessible namespace
             if 'optparams' in work:
                 tmp = {}
@@ -471,18 +453,19 @@ def run_mpi_sim(args, inputfile, usernamespace, optparams=None):
                 modelusernamespace = usernamespace
 
             # Run the model
-            print('MPI worker (rank {}) starting model {}/{}{} on {}\n'.format(rank, currentmodelrun, numbermodelruns, gpuinfo, hostname))
-            run_model(args, currentmodelrun, modelend - 1, numbermodelruns, inputfile, modelusernamespace)
+            print('Starting MPI spawned worker (parent: {}, rank: {}) on {} with model {}/{}{}\n'.format(work['mpicommname'], rank, hostname, currentmodelrun, numbermodelruns, gpuinfo))
+            tsolve = run_model(args, currentmodelrun, modelend - 1, numbermodelruns, inputfile, modelusernamespace)
+            print('Completed MPI spawned worker (parent: {}, rank: {}) on {} with model {}/{}{} in [HH:MM:SS]: {}\n'.format(work['mpicommname'], rank, hostname, currentmodelrun, numbermodelruns, gpuinfo, datetime.timedelta(seconds=tsolve)))
 
         # Shutdown
         comm.Disconnect()
 
 
-def run_mpi_alt_sim(args, inputfile, usernamespace, optparams=None):
+def run_mpi_no_spawn_sim(args, inputfile, usernamespace, optparams=None):
     """
-    Alternate MPI implementation that avoids using the spawn mechanism.
+    Alternate MPI implementation that avoids using the MPI spawn mechanism.
     This implementation is designed to be used as
-    e.g. 'mpirun -n 5 python -m gprMax user_models/mymodel.in -n 10 -mpialt'
+    e.g. 'mpirun -n 5 python -m gprMax user_models/mymodel.in -n 10 --mpi-no-spawn'
 
     Run mixed mode MPI/OpenMP simulation - MPI task farm for models with
     each model parallelised using either OpenMP (CPU) or CUDA (GPU)
@@ -519,8 +502,10 @@ def run_mpi_alt_sim(args, inputfile, usernamespace, optparams=None):
     # Master process #
     ##################
     if rank == 0:
-        tsimstart = perf_counter()
-        print('MPI master (rank {}, PID {}) on {} using {} workers\n'.format(rank, os.getpid(), hostname, numworkers))
+        tsimstart = timer()
+        mpistartstr = '\n=== MPI task farm (WITHOUT using MPI Spawn)'
+        print('{} {}'.format(mpistartstr, '=' * (get_terminal_width() - 1 - len(mpistartstr))))
+        print('=== MPI master ({}, rank: {}) on {} using {} workers...'.format(comm.name, comm.Get_rank(), hostname, numworkers))
 
         closedworkers = 0
         while closedworkers < numworkers:
@@ -544,14 +529,22 @@ def run_mpi_alt_sim(args, inputfile, usernamespace, optparams=None):
             elif tag == tags.EXIT.value:
                 closedworkers += 1
 
-        tsimend = perf_counter()
-        simcompletestr = '\n=== Simulation completed in [HH:MM:SS]: {}'.format(datetime.timedelta(seconds=tsimend - tsimstart))
+        tsimend = timer()
+        simcompletestr = '\n=== MPI master ({}, rank: {}) on {} completed simulation in [HH:MM:SS]: {}'.format(comm.name, comm.Get_rank(), hostname, datetime.timedelta(seconds=tsimend - tsimstart))
         print('{} {}\n'.format(simcompletestr, '=' * (get_terminal_width() - 1 - len(simcompletestr))))
 
     ##################
     # Worker process #
     ##################
     else:
+        # Get info and setup device ID for GPU(s)
+        gpuinfo = ''
+        if args.gpu is not None:
+            # Set device ID based on rank from list of GPUs
+            deviceID = (rank - 1) % len(args.gpu)
+            args.gpu = next(gpu for gpu in args.gpu if gpu.deviceID == deviceID)
+            gpuinfo = ' using {} - {}, {}'.format(args.gpu.deviceID, args.gpu.name, human_size(args.gpu.totalmem, a_kilobyte_is_1024_bytes=True))
+
         while True:
             comm.send(None, dest=0, tag=tags.READY.value)
             # Receive a model number to run from the master
@@ -560,15 +553,6 @@ def run_mpi_alt_sim(args, inputfile, usernamespace, optparams=None):
 
             # Run a model
             if tag == tags.START.value:
-
-                # Get info and setup device ID for GPU(s)
-                gpuinfo = ''
-                if args.gpu is not None:
-                    # Set device ID for multiple GPUs
-                    if isinstance(args.gpu, list):
-                        deviceID = (rank - 1) % len(args.gpu)
-                        args.gpu = next(gpu for gpu in args.gpu if gpu.deviceID == deviceID)
-                    gpuinfo = ' using {} - {}, {}'.format(args.gpu.deviceID, args.gpu.name, human_size(args.gpu.totalmem, a_kilobyte_is_1024_bytes=True))
 
                 # If Taguchi optimistaion, add specific value for each parameter
                 # to optimise for each experiment to user accessible namespace
@@ -581,9 +565,10 @@ def run_mpi_alt_sim(args, inputfile, usernamespace, optparams=None):
                     modelusernamespace = usernamespace
 
                 # Run the model
-                print('MPI worker (rank {}) starting model {}/{}{} on {}\n'.format(rank, currentmodelrun, numbermodelruns, gpuinfo, hostname))
-                run_model(args, currentmodelrun, modelend - 1, numbermodelruns, inputfile, modelusernamespace)
+                print('Starting MPI worker (parent: {}, rank: {}) on {} with model {}/{}{}\n'.format(comm.name, rank, hostname, currentmodelrun, numbermodelruns, gpuinfo))
+                tsolve = run_model(args, currentmodelrun, modelend - 1, numbermodelruns, inputfile, modelusernamespace)
                 comm.send(None, dest=0, tag=tags.DONE.value)
+                print('Completed MPI worker (parent: {}, rank: {}) on {} with model {}/{}{} in [HH:MM:SS]: {}\n'.format(comm.name, rank, hostname, currentmodelrun, numbermodelruns, gpuinfo, datetime.timedelta(seconds=tsolve)))
 
             # Break out of loop when work receives exit message
             elif tag == tags.EXIT.value:

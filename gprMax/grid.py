@@ -89,7 +89,7 @@ class FDTDGrid(Grid):
         self.outputdirectory = ''
         self.title = ''
         self.messages = True
-        self.tqdmdisable = False
+        self.progressbars = self.messages
         self.memoryusage = 0
 
         # Get information about host machine
@@ -136,6 +136,7 @@ class FDTDGrid(Grid):
         self.pmlthickness = OrderedDict((key, 10) for key in PML.boundaryIDs)
         self.cfs = []
         self.pmls = []
+        self.pmlformulation = 'HORIPML'
 
         self.materials = []
         self.mixingmodels = []
@@ -241,7 +242,7 @@ class FDTDGrid(Grid):
 
             # If the required memory without the snapshots will fit on the GPU then transfer and store snaphots on host
             if snapsmemsize != 0 and self.memoryusage - snapsmemsize < self.gpu.totalmem:
-                    self.snapsgpu2cpu = True
+                self.snapsgpu2cpu = True
 
     def gpu_set_blocks_per_grid(self):
         """Set the blocks per grid size used for updating the electric and magnetic field arrays on a GPU."""
@@ -253,12 +254,12 @@ class FDTDGrid(Grid):
         import pycuda.gpuarray as gpuarray
 
         self.ID_gpu = gpuarray.to_gpu(self.ID)
-        self.Ex_gpu = gpuarray.to_gpu(self.Ex)
-        self.Ey_gpu = gpuarray.to_gpu(self.Ey)
-        self.Ez_gpu = gpuarray.to_gpu(self.Ez)
-        self.Hx_gpu = gpuarray.to_gpu(self.Hx)
-        self.Hy_gpu = gpuarray.to_gpu(self.Hy)
-        self.Hz_gpu = gpuarray.to_gpu(self.Hz)
+        self.Ex_gpu = gpuarray.to_gpu(np.zeros((self.nx + 1, self.ny + 1, self.nz + 1), dtype=floattype))
+        self.Ey_gpu = gpuarray.to_gpu(np.zeros((self.nx + 1, self.ny + 1, self.nz + 1), dtype=floattype))
+        self.Ez_gpu = gpuarray.to_gpu(np.zeros((self.nx + 1, self.ny + 1, self.nz + 1), dtype=floattype))
+        self.Hx_gpu = gpuarray.to_gpu(np.zeros((self.nx + 1, self.ny + 1, self.nz + 1), dtype=floattype))
+        self.Hy_gpu = gpuarray.to_gpu(np.zeros((self.nx + 1, self.ny + 1, self.nz + 1), dtype=floattype))
+        self.Hz_gpu = gpuarray.to_gpu(np.zeros((self.nx + 1, self.ny + 1, self.nz + 1), dtype=floattype))
 
     def gpu_initialise_dispersive_arrays(self):
         """Initialise dispersive material coefficient arrays on GPU."""

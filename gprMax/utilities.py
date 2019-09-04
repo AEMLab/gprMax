@@ -19,6 +19,7 @@
 from contextlib import contextmanager
 import codecs
 import decimal as d
+import os
 import platform
 import psutil
 import re
@@ -32,6 +33,7 @@ from colorama import Fore
 from colorama import Style
 init()
 import numpy as np
+from time import process_time
 
 from gprMax.constants import complextype
 from gprMax.constants import floattype
@@ -365,8 +367,11 @@ class GPU(object):
         self.totalmem = drv.Device(self.deviceID).total_memory()
 
 
-def detect_gpus():
+def detect_check_gpus(deviceIDs):
     """Get information about Nvidia GPU(s).
+
+    Args:
+        deviceIDs (list): List of integers of device IDs.
 
     Returns:
         gpus (list): Detected GPU(s) object(s).
@@ -378,18 +383,36 @@ def detect_gpus():
         raise ImportError('To use gprMax in GPU mode the pycuda package must be installed, and you must have a NVIDIA CUDA-Enabled GPU (https://developer.nvidia.com/cuda-gpus).')
     drv.init()
 
-    # Check if there are any CUDA-Enabled GPUs
+    # Check and list any CUDA-Enabled GPUs
     if drv.Device.count() == 0:
         raise GeneralError('No NVIDIA CUDA-Enabled GPUs detected (https://developer.nvidia.com/cuda-gpus)')
+    elif 'CUDA_VISIBLE_DEVICES' in os.environ:
+        deviceIDsavail = os.environ.get('CUDA_VISIBLE_DEVICES')
+        deviceIDsavail = [int(s) for s in deviceIDsavail.split(',')]
+    else:
+        deviceIDsavail = range(drv.Device.count())
 
-    # Print information about all detected GPUs
+    # If no device ID is given use default of 0
+    if not deviceIDs:
+        deviceIDs = [0]
+
+    # Check if requested device ID(s) exist
+    for ID in deviceIDs:
+        if ID not in deviceIDsavail:
+            raise GeneralError('GPU with device ID {} does not exist'.format(ID))
+
+    # Gather information about selected/detected GPUs
     gpus = []
-    gputext = []
-    for i in range(drv.Device.count()):
-        gpu = GPU(deviceID=i)
+    allgpustext = []
+    for ID in deviceIDsavail:
+        gpu = GPU(deviceID=ID)
         gpu.get_gpu_info(drv)
-        gpus.append(gpu)
-        gputext.append('{} - {}, {}'.format(gpu.deviceID, gpu.name, human_size(gpu.totalmem, a_kilobyte_is_1024_bytes=True)))
-    print('GPU(s) detected: {}'.format(' | '.join(gputext)))
+        if ID in deviceIDs:
+            gpus.append(gpu)
+        allgpustext.append('{} - {}, {}'.format(gpu.deviceID, gpu.name, human_size(gpu.totalmem, a_kilobyte_is_1024_bytes=True)))
 
-    return gpus
+    return gpus, allgpustext
+
+def timer():
+    """Function to return the current process wide time in fractional seconds."""
+    return process_time()

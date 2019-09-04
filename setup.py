@@ -46,6 +46,10 @@ with open('gprMax/__init__.py', 'r') as fd:
 
 packages = [packagename, 'tests', 'tools', 'user_libs']
 
+# Parse long_description from README.rst file.
+with open('README.rst','r') as fd:
+    long_description = fd.read()
+
 # Python version
 if sys.version_info[:2] < (3, 4):
     sys.exit('\nExited: Requires Python 3.4 or newer!\n')
@@ -64,16 +68,12 @@ if '--no-cython' in sys.argv:
 else:
     USE_CYTHON = True
 
-# Build a list of all the files that need to be Cythonized looking in gprMax directory and user_libs
+# Build a list of all the files that need to be Cythonized looking in gprMax directory
 cythonfiles = []
-for root, dirs, files in os.walk(os.path.join(os.getcwd(), packagename)):
+for root, dirs, files in os.walk(os.path.join(os.getcwd(), packagename), topdown=True):
     for file in files:
         if file.endswith('.pyx'):
-            cythonfiles.append(os.path.join(packagename, file))
-for root, dirs, files in os.walk(os.path.join(os.getcwd(), 'user_libs')):
-    for file in files:
-        if file.endswith('.pyx'):
-            cythonfiles.append(os.path.join('user_libs', file))
+            cythonfiles.append(os.path.relpath(os.path.join(root, file)))
 
 # Process 'cleanall' command line argument - cleanup Cython files
 if 'cleanall' in sys.argv:
@@ -109,19 +109,19 @@ if 'cleanall' in sys.argv:
 # Set compiler options
 # Windows
 if sys.platform == 'win32':
-    compile_args = ['/O2', '/openmp', '/w']  # No static linking as no static version of OpenMP library.
+    compile_args = ['/O2', '/openmp', '/w']  # No static linking as no static version of OpenMP library; /w disables warnings
     linker_args = []
     extra_objects = []
 # Mac OS X - needs gcc (usually via HomeBrew) because the default compiler LLVM (clang) does not support OpenMP
 #          - with gcc -fopenmp option implies -pthread
 elif sys.platform == 'darwin':
-    gccpath = glob.glob('/usr/local/bin/gcc-[4-8]*')
+    gccpath = glob.glob('/usr/local/bin/gcc-[4-9]*')
     if gccpath:
         # Use newest gcc found
         os.environ['CC'] = gccpath[-1].split(os.sep)[-1]
         rpath = '/usr/local/opt/gcc/lib/gcc/' + gccpath[-1].split(os.sep)[-1][-1] + '/'
     else:
-        raise('Cannot find gcc 4.x, 5.x, 6.x, 7.x, or 8.x in /usr/local/bin. gprMax requires gcc to be installed - easily done through the Homebrew package manager (http://brew.sh). Note: gcc with OpenMP support, i.e. --without-multilib, must be installed')
+        raise('Cannot find gcc 4-9 in /usr/local/bin. gprMax requires gcc to be installed - easily done through the Homebrew package manager (http://brew.sh). Note: gcc with OpenMP support is required.')
     compile_args = ['-O3', '-w', '-fopenmp', '-march=native']  # Sometimes worth testing with '-fstrict-aliasing', '-fno-common'
     linker_args = ['-fopenmp', '-Wl,-rpath,' + rpath]
     extra_objects = []
@@ -161,11 +161,16 @@ if USE_CYTHON:
                            },
                            annotate=False)
 
+# SetupTools Required to make package
+import setuptools
+
 setup(name=packagename,
       version=version,
       author='Craig Warren and Antonis Giannopoulos',
       url='http://www.gprmax.com',
       description='Electromagnetic Modelling Software based on the Finite-Difference Time-Domain (FDTD) method',
+      long_description=long_description,
+      long_description_content_type="text/x-rst",
       license='GPLv3+',
       classifiers=[
           'Environment :: Console',
@@ -177,6 +182,20 @@ setup(name=packagename,
           'Programming Language :: Python :: 3',
           'Topic :: Scientific/Engineering'
       ],
+      #requirements
+      python_requires=">3.6",
+      install_requires=[
+          "colorama",
+          "cython",
+          "h5py",
+          "jupyter",
+          "matplotlib",
+          "numpy",
+          "psutil",
+          "scipy",
+          "terminaltables",
+          "tqdm",
+          ],
       ext_modules=extensions,
       packages=packages,
       include_package_data=True,

@@ -60,13 +60,13 @@ def process_geometrycmds(geometry, G):
     """
 
     # Disable progress bar if on Windows as it does not update properly
-    # when messages are printed
+    # when messages are printed for geometry
     if sys.platform == 'win32':
-        tqdmdisable = True
+        progressbars = False
     else:
-        tqdmdisable = G.tqdmdisable
+        progressbars = not G.progressbars
 
-    for object in tqdm(geometry, desc='Processing geometry related cmds', unit='cmds', ncols=get_terminal_width() - 1, file=sys.stdout, disable=tqdmdisable):
+    for object in tqdm(geometry, desc='Processing geometry related cmds', unit='cmds', ncols=get_terminal_width() - 1, file=sys.stdout, disable=progressbars):
         tmp = object.split()
 
         if tmp[0] == '#geometry_objects_read:':
@@ -121,6 +121,10 @@ def process_geometrycmds(geometry, G):
             # don't build anything, but AustinMan/Woman maybe uint16
             if data.dtype != 'int16':
                 data = data.astype('int16')
+
+            # Check that there are no values in the data greater than the maximum index for the specified materials
+            if np.amax(data) > len(materials) - 1:
+                raise CmdInputError("'" + ' '.join(tmp) + "'" + ' found data value(s) ({}) in the geometry objects file greater than the maximum index for the specified materials ({})'.format(np.amax(data), len(materials) - 1))
 
             # Look to see if rigid and ID arrays are present (these should be
             # present if the original geometry objects were written from gprMax)
@@ -1306,7 +1310,7 @@ def process_geometrycmds(geometry, G):
                         # Set the fractal surface using the pre-calculated spatial distribution and a random height
                         surface.fractalsurface = np.zeros((surface.fractalsurface.shape[0], surface.fractalsurface.shape[1]))
                         for i in range(len(bladesindex[0])):
-                                surface.fractalsurface[bladesindex[0][i], bladesindex[1][i]] = R.randint(surface.fractalrange[0], surface.fractalrange[1], size=1)
+                            surface.fractalsurface[bladesindex[0][i], bladesindex[1][i]] = R.randint(surface.fractalrange[0], surface.fractalrange[1], size=1)
 
                         # Create grass geometry parameters
                         g = Grass(numblades)

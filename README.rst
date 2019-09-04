@@ -1,7 +1,9 @@
 .. image:: https://readthedocs.org/projects/gprmax/badge/?version=latest
     :target: http://docs.gprmax.com/en/latest/?badge=latest
     :alt: Documentation Status
+
 |
+
 .. image:: docs/source/images/gprMax_logo_small.png
     :target: http://www.gprmax.com
 
@@ -31,13 +33,14 @@ For further information on referencing gprMax visit the `Publications section of
 Package overview
 ================
 
-.. code-block:: none
+.. code-block:: bash
 
     gprMax/
         conda_env.yml
         CONTRIBUTORS
         docs/
         gprMax/
+        gsoc/
         LICENSE
         README.rst
         setup.cfg
@@ -52,6 +55,7 @@ Package overview
 * ``CONTRIBUTORS`` contains a list of names of people who have contributed to the gprMax codebase.
 * ``docs`` contains source files for the User Guide. The User Guide is written using `reStructuredText <http://docutils.sourceforge.net/rst.html>`_ markup, and is built using `Sphinx <http://sphinx-doc.org>`_ and `Read the Docs <https://readthedocs.org>`_.
 * ``gprMax`` is the main package. Within this package the main module is ``gprMax.py``
+* ``gsoc`` contains information for `Google Summer of Code <https://summerofcode.withgoogle.com>`_ program - project ideas and proposal guidance.
 * ``LICENSE`` contains information on the `GNU General Public License v3 or higher <http://www.gnu.org/copyleft/gpl.html>`_.
 * ``README.rst`` contains getting started information on installation, usage, and new features/changes.
 * ``setup.cfg`` is used to set preference for code formatting/styling using flake8.
@@ -77,10 +81,10 @@ You can `watch screencasts <http://docs.gprmax.com/en/latest/screencasts.html>`_
 
 We recommend using Miniconda to install Python and the required Python packages for gprMax in a self-contained Python environment. Miniconda is a mini version of Anaconda which is a completely free Python distribution (including for commercial use and redistribution). It includes more than 300 of the most popular Python packages for science, math, engineering, and data analysis.
 
-* `Download and install Miniconda <http://conda.pydata.org/miniconda.html>`_. Choose the Python 3.x version for your platform (see the `Quick Install page <http://conda.pydata.org/docs/install/quick.html>`_ for help installing Miniconda)
+* `Download and install Miniconda <http://conda.pydata.org/miniconda.html>`_. Choose the Python 3.x version for your platform. We recommend choosing the installation options to: install Miniconda only for your user account; add Miniconda to your PATH environment variable; and to register Miniconda Python as your default Python. See the `Quick Install page <http://conda.pydata.org/docs/install/quick.html>`_ for help installing Miniconda.
 * Open a Terminal (Linux/macOS) or Command Prompt (Windows) and run the following commands:
 
-.. code-block:: none
+.. code-block:: bash
 
     $ conda update conda
     $ conda install git
@@ -106,16 +110,18 @@ macOS
 
 * Xcode (the IDE for macOS) comes with the LLVM (clang) compiler, but it does not currently support OpenMP, so you must install `gcc <https://gcc.gnu.org>`_. That said, it is still useful to have Xcode (with command line tools) installed. It can be downloaded from the App Store. Once Xcode is installed, download and install the `Homebrew package manager <http://brew.sh>`_ and then to install gcc, run:
 
-.. code-block:: none
+.. code-block:: bash
 
     $ brew install gcc
 
 Microsoft Windows
 ^^^^^^^^^^^^^^^^^
 
-* Download and install `Microsoft Visual C++ 2015 Build Tools <http://download.microsoft.com/download/5/F/7/5F7ACAEB-8363-451F-9425-68A90F98B238/visualcppbuildtools_full.exe>`_ (currently you must use the 2015 version, not 2017). Use the default installation options.
+* Download and install `Microsoft Visual C++ 2015 Build Tools <http://download.microsoft.com/download/5/F/7/5F7ACAEB-8363-451F-9425-68A90F98B238/visualcppbuildtools_full.exe>`_ (currently you must use the 2015 version, not 2017). Use the custom installation option and deselect everything apart from the Windows SDK for your version of Windows.
 
-Alternatively if you are using Windows 10 and feeling adventurous you can install the `Windows Subsystem for Linux <https://msdn.microsoft.com/en-gb/commandline/wsl/about>`_ and then follow the Linux install instructions for gprMax. Note however that currently WSL does not aim to support GUI desktops or applications, e.g. Gnome, KDE, etc....
+Alternatively if you are using Windows 10 and feeling adventurous you can install the `Windows Subsystem for Linux <https://docs.microsoft.com/en-gb/windows/wsl/about>`_ and then follow the Linux install instructions for gprMax. Note however that currently WSL does not aim to support GUI desktops or applications, e.g. Gnome, KDE, etc....
+
+
 
 3. Build and install gprMax
 ---------------------------
@@ -124,13 +130,14 @@ Once you have installed the aforementioned tools follow these steps to build and
 
 * Open a Terminal (Linux/macOS) or Command Prompt (Windows), navigate into the top-level gprMax directory, and if it is not already active, activate the gprMax conda environment :code:`conda activate gprMax`. Run the following commands:
 
-.. code-block:: none
+.. code-block:: bash
 
     (gprMax)$ python setup.py build
     (gprMax)$ python setup.py install
 
 **You are now ready to proceed to running gprMax.**
 
+If you have problems with building gprMax on Microsoft Windows, you may need to add :code:`C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\bin` to your path environment variable.
 
 Running gprMax
 ==============
@@ -141,19 +148,19 @@ Open a Terminal (Linux/macOS) or Command Prompt (Windows), navigate into the top
 
 Basic usage of gprMax is:
 
-.. code-block:: none
+.. code-block:: bash
 
     (gprMax)$ python -m gprMax path_to/name_of_input_file
 
 For example to run one of the test models:
 
-.. code-block:: none
+.. code-block:: bash
 
     (gprMax)$ python -m gprMax user_models/cylinder_Ascan_2D.in
 
 When the simulation is complete you can plot the A-scan using:
 
-.. code-block:: none
+.. code-block:: bash
 
     (gprMax)$ python -m tools.plot_Ascan user_models/cylinder_Ascan_2D.out
 
@@ -164,28 +171,29 @@ When you are finished using gprMax, the conda environment can be deactivated usi
 Optional command line arguments
 -------------------------------
 
-====================== ======= ===========
-Argument name          Type    Description
-====================== ======= ===========
-``-n``                 integer number of times to run the input file. This option can be used to run a series of models, e.g. to create a B-scan with 60 traces: ``(gprMax)$ python -m gprMax user_models/cylinder_Bscan_2D.in -n 60``
-``-gpu``               integer NVIDIA CUDA device ID for a specific GPU card. If not specified will default to device ID 0.
-``-restart``           integer model number to start/restart simulation from. It would typically be used to restart a series of models from a specific model number, with the ``-n`` argument, e.g. to restart from A-scan 45 when creating a B-scan with 60 traces: ``(gprMax)$ python -m gprMax user_models/cylinder_Bscan_2D.in -n 15 -restart 45``
-``-task``              integer task identifier (model number) when running simulation as a job array on `Open Grid Scheduler/Grid Engine <http://gridscheduler.sourceforge.net/index.html>`_. For further details see the `parallel performance section of the User Guide <http://docs.gprmax.com/en/latest/openmp_mpi.html>`_
-``-mpi``               integer number of Message Passing Interface (MPI) tasks, i.e. master + workers, for MPI task farm. This option is most usefully combined with ``-n`` to allow individual models to be farmed out using a MPI task farm, e.g. to create a B-scan with 60 traces and use MPI to farm out each trace: ``(gprMax)$ python -m gprMax user_models/cylinder_Bscan_2D.in -n 60 -mpi 61``. For further details see the `parallel performance section of the User Guide <http://docs.gprmax.com/en/latest/openmp_mpi.html>`_
-``-benchmark``         flag    switch on benchmarking mode. This can be used to benchmark the threading (parallel) performance of gprMax on different hardware. For further details see the `benchmarking section of the User Guide <http://docs.gprmax.com/en/latest/benchmarking.html>`_
-``--geometry-only``    flag    build a model and produce any geometry views but do not run the simulation, e.g. to check the geometry of a model is correct: ``(gprMax)$ python -m gprMax user_models/heterogeneous_soil.in --geometry-only``
-``--geometry-fixed``   flag    run a series of models where the geometry does not change between models, e.g. a B-scan where *only* the position of simple sources and receivers, moved using ``#src_steps`` and ``#rx_steps``, changes between models.
-``--opt-taguchi``      flag    run a series of models using an optimisation process based on Taguchi's method. For further details see the `user libraries section of the User Guide <http://docs.gprmax.com/en/latest/user_libs_opt_taguchi.html>`_
-``--write-processed``  flag    write another input file after any Python code and include commands in the original input file have been processed. Useful for checking that any Python code is being correctly processed into gprMax commands.
-``-h`` or ``--help``   flag    used to get help on command line options.
-====================== ======= ===========
+====================== ========= ===========
+Argument name          Type      Description
+====================== ========= ===========
+``-n``                 integer   number of times to run the input file. This option can be used to run a series of models, e.g. to create a B-scan with 60 traces: ``(gprMax)$ python -m gprMax user_models/cylinder_Bscan_2D.in -n 60``
+``-gpu``               flag/list flag to use NVIDIA GPU or list of NVIDIA GPU device ID(s) for specific GPU card(s), e.g. ``-gpu 0 1``
+``-restart``           integer   model number to start/restart simulation from. It would typically be used to restart a series of models from a specific model number, with the ``-n`` argument, e.g. to restart from A-scan 45 when creating a B-scan with 60 traces: ``(gprMax)$ python -m gprMax user_models/cylinder_Bscan_2D.in -n 15 -restart 45``
+``-task``              integer   task identifier (model number) when running simulation as a job array on `Open Grid Scheduler/Grid Engine <http://gridscheduler.sourceforge.net/index.html>`_. For further details see the `parallel performance section of the User Guide <http://docs.gprmax.com/en/latest/openmp_mpi.html>`_
+``-mpi``               integer   number of Message Passing Interface (MPI) tasks, i.e. master + workers, for MPI task farm. This option is most usefully combined with ``-n`` to allow individual models to be farmed out using a MPI task farm, e.g. to create a B-scan with 60 traces and use MPI to farm out each trace: ``(gprMax)$ python -m gprMax user_models/cylinder_Bscan_2D.in -n 60 -mpi 61``. For further details see the `parallel performance section of the User Guide <http://docs.gprmax.com/en/latest/openmp_mpi.html>`_
+``--mpi-no-spawn``     flag      use MPI task farm without spawn mechanism. For further details see the `parallel performance section of the User Guide <http://docs.gprmax.com/en/latest/openmp_mpi.html>`_
+``-benchmark``         flag      switch on benchmarking mode. This can be used to benchmark the threading (parallel) performance of gprMax on different hardware. For further details see the `benchmarking section of the User Guide <http://docs.gprmax.com/en/latest/benchmarking.html>`_
+``--geometry-only``    flag      build a model and produce any geometry views but do not run the simulation, e.g. to check the geometry of a model is correct: ``(gprMax)$ python -m gprMax user_models/heterogeneous_soil.in --geometry-only``
+``--geometry-fixed``   flag      run a series of models where the geometry does not change between models, e.g. a B-scan where *only* the position of simple sources and receivers, moved using ``#src_steps`` and ``#rx_steps``, changes between models.
+``--opt-taguchi``      flag      run a series of models using an optimisation process based on Taguchi's method. For further details see the `user libraries section of the User Guide <http://docs.gprmax.com/en/latest/user_libs_opt_taguchi.html>`_
+``--write-processed``  flag      write another input file after any Python code and include commands in the original input file have been processed. Useful for checking that any Python code is being correctly processed into gprMax commands.
+``-h`` or ``--help``   flag      used to get help on command line options.
+====================== ========= ===========
 
 Updating gprMax
 ===============
 
 * Open a Terminal (Linux/macOS) or Command Prompt (Windows), navigate into the top-level gprMax directory, and if it is not already active, activate the gprMax conda environment :code:`conda activate gprMax`. Run the following commands:
 
-.. code-block:: none
+.. code-block:: bash
 
     (gprMax)$ git pull
     (gprMax)$ python setup.py cleanall
@@ -200,7 +208,7 @@ Updating conda and Python packages
 
 Periodically you should update conda and the required Python packages. With the gprMax environment deactivated and from the top-level gprMax directory, run the following commands:
 
-.. code-block:: none
+.. code-block:: bash
 
     $ conda update conda
     $ conda env update -f conda_env.yml
