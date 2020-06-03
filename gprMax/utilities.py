@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2019: The University of Edinburgh
+# Copyright (C) 2015-2020: The University of Edinburgh
 #                 Authors: Craig Warren and Antonis Giannopoulos
 #
 # This file is part of gprMax.
@@ -63,7 +63,7 @@ def logo(version):
     """
 
     description = '\n=== Electromagnetic modelling software based on the Finite-Difference Time-Domain (FDTD) method'
-    copyright = 'Copyright (C) 2015-2019: The University of Edinburgh'
+    copyright = 'Copyright (C) 2015-2020: The University of Edinburgh'
     authors = 'Authors: Craig Warren and Antonis Giannopoulos'
     licenseinfo1 = 'gprMax is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.\n'
     licenseinfo2 = 'gprMax is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.'
@@ -289,11 +289,13 @@ def get_host_info():
 
         # CPU information
         try:
-            cpuIDinfo = subprocess.check_output("cat /proc/cpuinfo", shell=True, stderr=subprocess.STDOUT).decode('utf-8').strip()
+            my_env = os.environ.copy()
+            my_env["LC_ALL"] = "C"
+            cpuIDinfo = subprocess.check_output("cat /proc/cpuinfo", shell=True, env=my_env, stderr=subprocess.STDOUT).decode('utf-8').strip()
             for line in cpuIDinfo.split('\n'):
                 if re.search('model name', line):
                     cpuID = re.sub('.*model name.*:', '', line, 1).strip()
-            allcpuinfo = subprocess.check_output("lscpu", shell=True, stderr=subprocess.STDOUT).decode('utf-8').strip()
+            allcpuinfo = subprocess.check_output("lscpu", shell=True, env=my_env, stderr=subprocess.STDOUT).decode('utf-8').strip()
             for line in allcpuinfo.split('\n'):
                 if 'Socket(s)' in line:
                     sockets = int(re.sub("\D", "", line.strip()))
@@ -308,8 +310,7 @@ def get_host_info():
         logicalcores = sockets * corespersocket * threadspercore
 
         # OS version
-        osrelease = subprocess.check_output("cat /proc/sys/kernel/osrelease", shell=True).decode('utf-8').strip()
-        osversion = 'Linux (' + osrelease + ', ' + platform.linux_distribution()[0] + ')'
+        osversion = platform.platform()
 
     # Dictionary of host information
     hostinfo = {}
